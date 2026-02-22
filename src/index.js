@@ -32,6 +32,7 @@ const THREAD_PARENT_TYPES = [
 const config = {
   channelId: process.env.CHANNEL_ID || '',
   autoMessage: process.env.AUTO_MESSAGE || '',
+  waitForMessage: parseInt(process.env.WAIT_FOR_MESSAGE) || 0, // ms para aguardar primeira mensagem (0 = desativado)
   prefix: '!autoPing',
   enabled: true
 };
@@ -203,6 +204,10 @@ const commands = {
       ? await validateChannel(config.channelId)
       : { valid: false };
 
+    const waitModeText = config.waitForMessage > 0 
+      ? `⏱️ Aguardar 1ª mensagem (até ${config.waitForMessage}ms)` 
+      : '⚡ Responder imediatamente';
+
     const statusText = `
 **🤖 Status do AutoPing**
 
@@ -211,6 +216,8 @@ ${channelInfo.valid ? '✅ Canal válido' : '❌ ' + (channelInfo.error || 'Cana
 
 💬 **Mensagem:** \`${config.autoMessage || 'Não configurada'}\`
 ${config.autoMessage ? '✅ Mensagem válida' : '❌ Mensagem não configurada'}
+
+🕐 **Modo:** ${waitModeText}
 
 ⚡ **Status:** ${config.enabled ? '🟢 Ativo' : '🔴 Desativado'}
 
@@ -287,6 +294,7 @@ ${config.autoMessage ? '✅ Mensagem válida' : '❌ Mensagem não configurada'}
 \`!autoPing status\` - Mostra a configuração atual
 \`!autoPing canal ID\` - Define o canal a ser monitorado
 \`!autoPing msg TEXTO\` - Define a mensagem automática
+\`!autoPing delay MS\` - Define tempo de espera (0 = imediato)
 \`!autoPing listar\` - Lista todos os canais disponíveis
 \`!autoPing on\` - Ativa o AutoPing
 \`!autoPing off\` - Desativa o AutoPing
@@ -295,6 +303,8 @@ ${config.autoMessage ? '✅ Mensagem válida' : '❌ Mensagem não configurada'}
 **Exemplos:**
 \`!autoPing canal 123456789012345678\`
 \`!autoPing msg 222/555/666-FB/666-Rep\`
+\`!autoPing delay 5000\` - Aguarda até 5s pela 1ª mensagem
+\`!autoPing delay 0\` - Responde imediatamente
     `.trim();
 
     await message.channel.send(helpText);
@@ -304,6 +314,26 @@ ${config.autoMessage ? '✅ Mensagem válida' : '❌ Mensagem não configurada'}
     config.enabled = true;
     await message.channel.send('✅ AutoPing **ativado**!');
     console.log('\n🟢 AutoPing ativado via comando\n');
+  },
+
+  async delay(message, args) {
+    const newDelay = parseInt(args[0]);
+
+    if (args.length === 0 || isNaN(newDelay) || newDelay < 0) {
+      await message.channel.send(`❌ Use: \`!autoPing delay MS\`\n\n**Exemplos:**\n\`!autoPing delay 5000\` - Aguarda até 5 segundos pela 1ª mensagem\n\`!autoPing delay 0\` - Responde imediatamente (padrão)\n\n**Atual:** ${config.waitForMessage}ms`);
+      return;
+    }
+
+    const oldDelay = config.waitForMessage;
+    config.waitForMessage = newDelay;
+
+    if (newDelay === 0) {
+      await message.channel.send(`✅ **Modo alterado!**\n⚡ Agora responde **imediatamente** quando um tópico é criado.\n\n⚠️ Esta alteração é temporária. Para torná-la permanente, edite o arquivo \`.env\``);
+    } else {
+      await message.channel.send(`✅ **Modo alterado!**\n⏱️ Agora aguarda até **${newDelay}ms** pela primeira mensagem do criador antes de responder.\n\n⚠️ Esta alteração é temporária. Para torná-la permanente, edite o arquivo \`.env\``);
+    }
+
+    console.log(`\n🔄 Delay alterado: ${oldDelay}ms → ${newDelay}ms\n`);
   },
 
   async off(message) {
@@ -338,6 +368,7 @@ client.on('ready', async () => {
   }
 
   console.log(`💬 Mensagem: "${config.autoMessage || 'Não configurada'}"`);
+  console.log(`🕐 Modo: ${config.waitForMessage > 0 ? `Aguardar até ${config.waitForMessage}ms pela 1ª mensagem` : 'Resposta imediata'}`);
   console.log('═'.repeat(50));
   console.log('📝 Comandos disponíveis: !autoPing ajuda');
   console.log('⏳ Aguardando criação de novos tópicos...\n');
@@ -394,8 +425,33 @@ client.on('threadCreate', async (thread, newlyCreated) => {
       await thread.join();
     }
 
-    // Enviar mensagem o mais rápido possível
     const startTime = Date.now();
+
+    // Se waitForMessage > 0, aguardar a primeira mensagem do criador
+    if (config.waitForMessage > 0) {
+      console.log(`   ⏳ Aguardando primeira mensagem (até ${config.waitForMessage}ms)...`);
+      
+      // Criar um collector para aguardar a primeira mensagem
+      const filter = (msg) => msg.author.id === thread.ownerId;
+      
+      try {
+        // Aguardar a primeira mensagem do criador do tópico
+        const collected = await thread.awaitMessages({
+          filter,
+          max: 1,
+          time: config.waitForMessage,
+          errors: ['time']
+        });
+        
+        const firstMessage = collected.first();
+        console.log(`   📨 Primeira mensagem detectada de ${firstMessage.author.tag}`);
+      } catch (timeoutError) {
+        // Timeout - nenhuma mensagem recebida no tempo limite
+        console.log(`   ⏰ Timeout - enviando mensagem mesmo assim`);
+      }
+    }
+
+    // Enviar mensagem
     await thread.send(config.autoMessage);
     const responseTime = Date.now() - startTime;
 

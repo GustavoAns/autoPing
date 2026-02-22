@@ -140,6 +140,10 @@ CHANNEL_ID=123456789012345678
 
 # Mensagem a ser enviada
 AUTO_MESSAGE=222/555/666-FB/666-Rep
+
+# Tempo de espera pela 1ª mensagem (em ms)
+# 0 = responde imediatamente | 5000 = aguarda até 5 segundos
+WAIT_FOR_MESSAGE=5000
 ```
 
 ---
@@ -183,6 +187,7 @@ Digite estes comandos em **qualquer chat do Discord** (serão deletados automati
 | `!autoPing status` | Mostra a configuração atual |
 | `!autoPing canal ID` | Define o canal a ser monitorado |
 | `!autoPing msg TEXTO` | Define a mensagem automática |
+| `!autoPing delay MS` | Define tempo de espera (0 = imediato) |
 | `!autoPing listar` | Lista todos os canais disponíveis |
 | `!autoPing on` | Ativa o AutoPing |
 | `!autoPing off` | Desativa o AutoPing |
@@ -192,6 +197,7 @@ Digite estes comandos em **qualquer chat do Discord** (serão deletados automati
 ```
 !autoPing canal 123456789012345678
 !autoPing msg Olá! Tenho interesse em participar!
+!autoPing delay 5000
 ```
 
 > ⚠️ As alterações via comandos são **temporárias**. Para torná-las permanentes, edite o arquivo `.env`.
