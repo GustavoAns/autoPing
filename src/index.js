@@ -76,10 +76,22 @@ async function validateChannel(channelId) {
       return { valid: false, error: `Tipo de canal (${channel.type}) não suportado. Use um canal de texto, fórum, mídia ou anúncios.` };
     }
 
-    // Verificar permissões
-    const permissions = channel.permissionsFor(client.user);
-    if (permissions && !permissions.has('SendMessages')) {
-      return { valid: false, error: 'Sem permissão para enviar mensagens neste canal.' };
+    // Verificar permissões (usando try-catch pois as flags podem variar entre versões)
+    try {
+      const permissions = channel.permissionsFor(client.user);
+      if (permissions) {
+        // Tentar diferentes nomes de permissão (compatibilidade entre versões)
+        const canSend = permissions.has('SEND_MESSAGES') || 
+                        permissions.has('SendMessages') || 
+                        permissions.has(0x800n) || // Bitfield para SEND_MESSAGES
+                        permissions.has(2048);     // Número decimal
+        if (!canSend) {
+          return { valid: false, error: 'Sem permissão para enviar mensagens neste canal.' };
+        }
+      }
+    } catch (permError) {
+      // Se der erro na verificação de permissão, ignorar e tentar usar o canal mesmo assim
+      console.log(`   ⚠️ Não foi possível verificar permissões: ${permError.message}`);
     }
 
     return {
