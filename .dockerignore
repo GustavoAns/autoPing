@@ -1,0 +1,24 @@
+# Ignorar no build do Docker
+node_modules
+npm-debug.log
+
+# Arquivos Git
+.git
+.gitignore
+
+# Documentação
+README.md
+*.md
+
+# Arquivos de ambiente (serão passados via docker-compose)
+.env
+.env.*
+
+# Arquivos de IDE
+.vscode
+.idea
+*.swp
+
+# Arquivos de sistema
+.DS_Store
+Thumbs.db

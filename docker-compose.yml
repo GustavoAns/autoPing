@@ -1,0 +1,31 @@
+# ===========================================
+# Discord AutoPing - Docker Compose
+# ===========================================
+# Uso:
+#   Iniciar:   docker-compose up -d
+#   Logs:      docker-compose logs -f
+#   Parar:     docker-compose down
+#   Rebuild:   docker-compose up -d --build
+
+services:
+  autoping:
+    build: .
+    container_name: discord-autoping
+    restart: unless-stopped
+    
+    # Carregar variáveis do arquivo .env
+    env_file:
+      - .env
+    
+    # Alternativa: definir variáveis diretamente
+    # environment:
+    #   - DISCORD_TOKEN=${DISCORD_TOKEN}
+    #   - CHANNEL_ID=${CHANNEL_ID}
+    #   - AUTO_MESSAGE=${AUTO_MESSAGE}
+    
+    # Logging configurado
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
