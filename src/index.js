@@ -45,6 +45,102 @@ if (!process.env.DISCORD_TOKEN || process.env.DISCORD_TOKEN.includes('seu_token'
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 
+// ═══════════════════════════════════════════════════════════════════
+// ENVIO ULTRA-RÁPIDO VIA UNDICI COM POOL DE CONEXÕES
+// ═══════════════════════════════════════════════════════════════════
+
+const { Pool } = require('undici');
+
+// Pool de conexões persistentes para Discord API
+// Mantém conexões TCP/TLS abertas para reutilização
+const discordPool = new Pool('https://discord.com', {
+  connections: 10,           // Número de conexões simultâneas
+  pipelining: 1,             // Requests por conexão
+  keepAliveTimeout: 300000,  // Manter conexão viva por 5 minutos
+  keepAliveMaxTimeout: 600000, // Máximo 10 minutos
+  connect: {
+    rejectUnauthorized: true
+  }
+});
+
+// Headers pré-configurados (não mudam)
+const STATIC_HEADERS = {
+  'authorization': DISCORD_TOKEN,
+  'content-type': 'application/json',
+};
+
+// Cache do body JSON stringificado
+let cachedMessageBody = null;
+let lastMessageContent = null;
+
+// Intervalo do keep-warm
+let keepWarmInterval = null;
+
+/**
+ * Mantém a conexão "quente" fazendo pings periódicos
+ * Isso evita que o TLS handshake precise ser refeito
+ */
+function startKeepWarm() {
+  // Ping a cada 30 segundos para manter conexão viva
+  keepWarmInterval = setInterval(async () => {
+    try {
+      await discordPool.request({
+        path: '/api/v10/gateway',
+        method: 'GET',
+        headers: { 'authorization': DISCORD_TOKEN }
+      });
+    } catch (e) {
+      // Ignora erros - é só keep-warm
+    }
+  }, 30000); // 30 segundos
+
+  console.log('🔥 Keep-warm ativado (ping a cada 30s)');
+}
+
+/**
+ * Pré-aquece a conexão com o Discord (chamado no ready)
+ */
+async function warmupConnection() {
+  try {
+    // Faz um request simples para estabelecer conexão TLS
+    await discordPool.request({
+      path: '/api/v10/gateway',
+      method: 'GET',
+      headers: { 'authorization': DISCORD_TOKEN }
+    });
+    console.log('🔥 Conexão com Discord API pré-aquecida!');
+
+    // Iniciar keep-warm
+    startKeepWarm();
+  } catch (e) {
+    // Ignora erros - é só warmup
+    console.log('⚠️ Warmup falhou, tentando keep-warm mesmo assim');
+    startKeepWarm();
+  }
+}
+
+/**
+ * Envia mensagem via pool de conexões (reutiliza conexão TLS)
+ */
+async function sendMessageDirect(channelId, content) {
+  // Usar body cacheado se mensagem não mudou
+  if (content !== lastMessageContent) {
+    cachedMessageBody = JSON.stringify({ content });
+    lastMessageContent = content;
+  }
+
+  const { statusCode } = await discordPool.request({
+    path: `/api/v10/channels/${channelId}/messages`,
+    method: 'POST',
+    headers: STATIC_HEADERS,
+    body: cachedMessageBody
+  });
+
+  if (statusCode >= 400) {
+    throw new Error(`HTTP ${statusCode}`);
+  }
+}
+
 // Criar cliente Discord com otimizações de performance
 const client = new Client({
   checkUpdate: false,
@@ -251,33 +347,32 @@ ${config.autoMessage ? '✅ Mensagem válida' : '❌ Mensagem não configurada'}
 
     if (!newChannelId) {
       console.log('\n📋 Comando: !autoPing canal');
-      console.log('   ❌ ID do canal não fornecido\n');
-      await message.channel.send('❌ Use: `!autoPing canal ID_DO_CANAL`\nExemplo: `!autoPing canal 123456789012345678`');
+      console.log('   ❌ ID do canal não fornecido');
+      console.log('   💡 Use: !autoPing canal ID_DO_CANAL\n');
       return;
     }
 
     console.log('\n📋 Comando: !autoPing canal');
     console.log(`   🔄 Validando canal: ${newChannelId}`);
-    await message.channel.send('🔄 Validando canal...');
 
     const validation = await validateChannel(newChannelId);
 
     if (!validation.valid) {
       console.log(`   ❌ Erro: ${validation.error}\n`);
-      await message.channel.send(`❌ **Erro:** ${validation.error}`);
       return;
     }
 
     const oldChannel = config.channelId;
     config.channelId = newChannelId;
 
-    await message.channel.send(`✅ **Canal alterado com sucesso!**\n📺 Agora monitorando: ${validation.info}\n\n⚠️ Esta alteração é temporária. Para torná-la permanente, edite o arquivo \`.env\``);
-
-    console.log(`   ✅ Canal alterado: ${oldChannel} → ${newChannelId}`);
+    console.log(`   ✅ Canal alterado: ${oldChannel || 'nenhum'} → ${newChannelId}`);
     console.log(`   📺 Novo canal: ${validation.info}\n`);
 
     // Atualizar cache do canal
     cachedChannelInfo = validation.info;
+
+    // Exibir status atualizado
+    await printStatus();
   },
 
   async msg(message, args) {
@@ -286,8 +381,8 @@ ${config.autoMessage ? '✅ Mensagem válida' : '❌ Mensagem não configurada'}
     console.log('\n📋 Comando: !autoPing msg');
 
     if (!newMessage) {
-      console.log('   ❌ Mensagem não fornecida\n');
-      await message.channel.send('❌ Use: `!autoPing msg SUA_MENSAGEM`\nExemplo: `!autoPing msg Olá! Tenho interesse!`');
+      console.log('   ❌ Mensagem não fornecida');
+      console.log('   💡 Use: !autoPing msg SUA_MENSAGEM\n');
       return;
     }
 
@@ -295,15 +390,16 @@ ${config.autoMessage ? '✅ Mensagem válida' : '❌ Mensagem não configurada'}
 
     if (!validation.valid) {
       console.log(`   ❌ Erro: ${validation.error}\n`);
-      await message.channel.send(`❌ **Erro:** ${validation.error}`);
       return;
     }
 
     const oldMessage = config.autoMessage;
     config.autoMessage = newMessage;
 
-    console.log(`   ✅ Mensagem alterada: "${oldMessage}" → "${newMessage}"\n`);
-    await message.channel.send(`✅ **Mensagem alterada com sucesso!**\n💬 Nova mensagem: \`${newMessage}\`\n\n⚠️ Esta alteração é temporária. Para torná-la permanente, edite o arquivo \`.env\``);
+    console.log(`   ✅ Mensagem alterada: "${oldMessage || 'nenhuma'}" → "${newMessage}"\n`);
+
+    // Exibir status atualizado
+    await printStatus();
   },
 
   async listar(message) {
@@ -357,7 +453,9 @@ ${config.autoMessage ? '✅ Mensagem válida' : '❌ Mensagem não configurada'}
     console.log('\n📋 Comando: !autoPing on');
     config.enabled = true;
     console.log('   🟢 AutoPing ATIVADO\n');
-    await message.channel.send('✅ AutoPing **ativado**!');
+
+    // Exibir status atualizado
+    await printStatus();
   },
 
   async delay(message, args) {
@@ -366,8 +464,8 @@ ${config.autoMessage ? '✅ Mensagem válida' : '❌ Mensagem não configurada'}
     console.log('\n📋 Comando: !autoPing delay');
 
     if (args.length === 0 || isNaN(newDelay) || newDelay < 0) {
-      console.log(`   ❌ Valor inválido. Atual: ${config.waitForMessage}ms\n`);
-      await message.channel.send(`❌ Use: \`!autoPing delay MS\`\n\n**Exemplos:**\n\`!autoPing delay 5000\` - Aguarda até 5 segundos pela 1ª mensagem\n\`!autoPing delay 0\` - Responde imediatamente (padrão)\n\n**Atual:** ${config.waitForMessage}ms`);
+      console.log(`   ❌ Valor inválido. Atual: ${config.waitForMessage}ms`);
+      console.log('   💡 Use: !autoPing delay MS (ex: 5000 ou 0)\n');
       return;
     }
 
@@ -376,18 +474,17 @@ ${config.autoMessage ? '✅ Mensagem válida' : '❌ Mensagem não configurada'}
 
     console.log(`   ✅ Delay alterado: ${oldDelay}ms → ${newDelay}ms\n`);
 
-    if (newDelay === 0) {
-      await message.channel.send(`✅ **Modo alterado!**\n⚡ Agora responde **imediatamente** quando um tópico é criado.\n\n⚠️ Esta alteração é temporária. Para torná-la permanente, edite o arquivo \`.env\``);
-    } else {
-      await message.channel.send(`✅ **Modo alterado!**\n⏱️ Agora aguarda até **${newDelay}ms** pela primeira mensagem do criador antes de responder.\n\n⚠️ Esta alteração é temporária. Para torná-la permanente, edite o arquivo \`.env\``);
-    }
+    // Exibir status atualizado
+    await printStatus();
   },
 
   async off(message) {
     console.log('\n📋 Comando: !autoPing off');
     config.enabled = false;
     console.log('   🔴 AutoPing DESATIVADO\n');
-    await message.channel.send('🔴 AutoPing **desativado**!');
+
+    // Exibir status atualizado
+    await printStatus();
   }
 };
 
@@ -430,61 +527,53 @@ const processedThreads = new Set();
 // MODO ULTRA-RÁPIDO: Listener de evento RAW do WebSocket
 // Este evento chega ANTES do threadCreate processado, permitindo resposta mais rápida
 client.on('raw', async (packet) => {
-  // Apenas processar eventos de criação de thread
+  // Verificações rápidas inline (sem chamadas de função)
   if (packet.t !== 'THREAD_CREATE') return;
-  if (!config.enabled) return;
-  if (!config.autoMessage) return;
+  if (!config.enabled || !config.autoMessage) return;
 
   const data = packet.d;
-
-  // Verificar se é uma thread recém-criada no canal monitorado
-  if (!data.newly_created) return;
-  if (data.parent_id !== config.channelId) return;
-
-  // Evitar processamento duplicado
+  if (!data.newly_created || data.parent_id !== config.channelId) return;
   if (processedThreads.has(data.id)) return;
+
+  // Se modo delay ativo, deixar threadCreate handler lidar
+  if (config.waitForMessage > 0) return;
+
   processedThreads.add(data.id);
-
-  // Limpar cache de threads processadas após 30 segundos
-  setTimeout(() => processedThreads.delete(data.id), 30000);
-
   const startTime = Date.now();
 
-  console.log(`\n⚡ [RAW] Novo tópico detectado!`);
-  console.log(`   📌 Nome: ${data.name}`);
-  console.log(`   🆔 ID: ${data.id}`);
-  console.log(`   👤 Criador: ${data.owner_id}`);
-
   try {
-    // Se waitForMessage > 0, deixar o threadCreate handler lidar
-    if (config.waitForMessage > 0) {
-      console.log(`   ⏳ Modo delay ativo - usando handler padrão`);
-      processedThreads.delete(data.id); // Permitir threadCreate processar
-      return;
-    }
-
-    // Enviar mensagem diretamente via API REST (mais rápido que thread.send)
-    await client.api.channels(data.id).messages.post({
-      data: { content: config.autoMessage }
-    });
+    // ENVIAR PRIMEIRO - logs depois!
+    await sendMessageDirect(data.id, config.autoMessage);
 
     const responseTime = Date.now() - startTime;
+
+    // Logs após envio (não afeta latência)
+    console.log(`\n⚡ [RAW] Novo tópico detectado!`);
+    console.log(`   📌 Nome: ${data.name}`);
+    console.log(`   🆔 ID: ${data.id}`);
+    console.log(`   👤 Criador: ${data.owner_id}`);
     console.log(`   ✅ Mensagem enviada via RAW!`);
     console.log(`   ⚡ Tempo de resposta: ${responseTime}ms\n`);
 
     // Exibir status após envio
     await printStatus();
   } catch (error) {
-    console.error(`   ❌ [RAW] Erro: ${error.message}`);
+    console.error(`\n❌ [RAW] Erro ao enviar: ${error.message}`);
     // Se falhar via raw, o threadCreate ainda pode tentar
     processedThreads.delete(data.id);
   }
+
+  // Limpar cache após 30 segundos
+  setTimeout(() => processedThreads.delete(data.id), 30000);
 });
 
 // Evento: Bot conectado
 client.on('ready', async () => {
   console.log('═'.repeat(50));
   console.log('🚀 Discord AutoPing Iniciado!');
+
+  // Pré-aquecer conexão com Discord API (reduz latência do primeiro request)
+  warmupConnection();
 
   // Validar e cachear canal inicial
   if (config.channelId) {
@@ -629,6 +718,8 @@ process.on('unhandledRejection', (error) => {
 // Tratamento de encerramento gracioso
 process.on('SIGINT', () => {
   console.log('\n👋 Encerrando AutoPing...');
+  if (keepWarmInterval) clearInterval(keepWarmInterval);
+  discordPool.close();
   client.destroy();
   process.exit(0);
 });
