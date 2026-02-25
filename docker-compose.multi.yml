@@ -1,0 +1,60 @@
+# ===========================================
+# Discord AutoPing - Múltiplas Instâncias
+# ===========================================
+# Uso:
+#   Iniciar todas:    docker-compose -f docker-compose.multi.yml up -d --build
+#   Logs de uma:      docker-compose -f docker-compose.multi.yml logs -f conta1
+#   Logs de todas:    docker-compose -f docker-compose.multi.yml logs -f
+#   Parar todas:      docker-compose -f docker-compose.multi.yml down
+#   Reiniciar uma:    docker-compose -f docker-compose.multi.yml restart conta1
+#
+# Configuração:
+#   1. Crie uma pasta para cada conta: instances/conta1/, instances/conta2/, etc
+#   2. Copie o .env.example para cada pasta e configure
+#   3. Adicione mais serviços abaixo copiando o bloco "conta1"
+
+services:
+  # ═══════════════════════════════════════════
+  # CONTA 1
+  # ═══════════════════════════════════════════
+  conta1:
+    build: .
+    container_name: autoping-conta1
+    restart: unless-stopped
+    env_file:
+      - ./instances/conta1/.env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ═══════════════════════════════════════════
+  # CONTA 2 (descomente para usar)
+  # ═══════════════════════════════════════════
+  # conta2:
+  #   build: .
+  #   container_name: autoping-conta2
+  #   restart: unless-stopped
+  #   env_file:
+  #     - ./instances/conta2/.env
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+
+  # ═══════════════════════════════════════════
+  # CONTA 3 (descomente para usar)
+  # ═══════════════════════════════════════════
+  # conta3:
+  #   build: .
+  #   container_name: autoping-conta3
+  #   restart: unless-stopped
+  #   env_file:
+  #     - ./instances/conta3/.env
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"

@@ -230,7 +230,66 @@ docker ps
 
 ---
 
-## 🔧 Compartilhar com Outras Pessoas
+## � Múltiplas Contas (Instâncias)
+
+Para rodar o bot em **várias contas simultaneamente**:
+
+### Estrutura de Pastas
+
+```
+autoPing/
+├── instances/
+│   ├── conta1/
+│   │   └── .env     ← Configuração da conta 1
+│   ├── conta2/
+│   │   └── .env     ← Configuração da conta 2
+│   └── conta3/
+│       └── .env     ← Configuração da conta 3
+└── docker-compose.multi.yml
+```
+
+### Configuração
+
+1. **Crie uma pasta para cada conta** em `instances/`:
+   ```cmd
+   mkdir instances\conta1
+   mkdir instances\conta2
+   ```
+
+2. **Copie e configure o `.env`** para cada conta:
+   ```cmd
+   copy .env.example instances\conta1\.env
+   copy .env.example instances\conta2\.env
+   ```
+
+3. **Edite cada `.env`** com o token e configurações específicas de cada conta.
+
+4. **Descomente os serviços** no arquivo `docker-compose.multi.yml` para cada conta que deseja usar.
+
+### Comandos para Múltiplas Instâncias
+
+```cmd
+REM Iniciar todas as contas
+docker-compose -f docker-compose.multi.yml up -d --build
+
+REM Ver logs de todas as contas
+docker-compose -f docker-compose.multi.yml logs -f
+
+REM Ver logs de uma conta específica
+docker-compose -f docker-compose.multi.yml logs -f conta1
+
+REM Parar todas as contas
+docker-compose -f docker-compose.multi.yml down
+
+REM Reiniciar uma conta específica
+docker-compose -f docker-compose.multi.yml restart conta1
+```
+
+> 💡 **Dica:** Use o arquivo `.env` da raiz para uma conta única, ou `instances/` para múltiplas contas.
+
+---
+
+## �🔧 Compartilhar com Outras Pessoas
 
 Para distribuir este projeto:
 

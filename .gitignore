@@ -3,6 +3,7 @@ node_modules/
 
 # Variáveis de ambiente (NUNCA COMMITAR!)
 .env
+instances/*/.env
 
 # Logs
 logs/
