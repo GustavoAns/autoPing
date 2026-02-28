@@ -29,10 +29,12 @@ const THREAD_PARENT_TYPES = [
 // ═══════════════════════════════════════════════════════════════════
 // CONFIGURAÇÃO DINÂMICA (pode ser alterada via comandos)
 // ═══════════════════════════════════════════════════════════════════
+
 const config = {
   channelId: process.env.CHANNEL_ID || '',
   autoMessage: process.env.AUTO_MESSAGE || '',
   waitForMessage: parseInt(process.env.WAIT_FOR_MESSAGE) || 0, // ms para aguardar primeira mensagem (0 = desativado)
+  humanizedDelay: parseInt(process.env.HUMANIZED_DELAY) || 900, // ms de delay extra para compensar ping
   prefix: '!autoPing',
   enabled: true
 };
@@ -524,22 +526,123 @@ async function printStatus() {
 // Set para evitar processamento duplicado entre raw e threadCreate
 const processedThreads = new Set();
 
-// MODO ULTRA-RÁPIDO: Listener de evento RAW do WebSocket
-// Este evento chega ANTES do threadCreate processado, permitindo resposta mais rápida
+// Map para modo humanizado: guarda tópicos aguardando primeira mensagem
+// Formato: { threadId: { ownerId, startTime, timeout } }
+const pendingThreads = new Map();
+
+// MODO ULTRA-RÁPIDO HUMANIZADO: Detecta primeira mensagem via RAW
 client.on('raw', async (packet) => {
-  // Verificações rápidas inline (sem chamadas de função)
+  // Detectar MESSAGE_CREATE para modo humanizado
+  if (packet.t === 'MESSAGE_CREATE' && config.waitForMessage > 0) {
+    const msg = packet.d;
+
+    // Debug: mostrar todas mensagens em canais pendentes
+    if (pendingThreads.has(msg.channel_id)) {
+      console.log(`   🔍 [DEBUG] MESSAGE_CREATE recebido:`);
+      console.log(`      Canal: ${msg.channel_id}`);
+      console.log(`      Autor: ${msg.author?.id} (esperando: ${pendingThreads.get(msg.channel_id)?.ownerId})`);
+    }
+
+    const pending = pendingThreads.get(msg.channel_id);
+
+    // Verificar se é a primeira mensagem do criador do tópico que estamos aguardando
+    if (pending && msg.author?.id === pending.ownerId) {
+      // Cancelar timeout
+      if (pending.timeout) clearTimeout(pending.timeout);
+      pendingThreads.delete(msg.channel_id);
+
+      // Marcar como processado
+      if (processedThreads.has(msg.channel_id)) return;
+      processedThreads.add(msg.channel_id);
+
+      const startTime = pending.startTime;
+
+
+      try {
+        // Pequeno delay para garantir ordem visual (configurável via .env)
+        await new Promise(res => setTimeout(res, config.humanizedDelay));
+        await sendMessageDirect(msg.channel_id, config.autoMessage);
+
+        const responseTime = Date.now() - startTime;
+
+        console.log(`   📨 Primeira mensagem detectada via RAW!`);
+        console.log(`   ✅ Resposta enviada!`);
+        console.log(`   ⚡ Tempo de resposta: ${responseTime}ms\n`);
+
+        await printStatus();
+      } catch (error) {
+        console.error(`   ❌ Erro ao enviar: ${error.message}\n`);
+        processedThreads.delete(msg.channel_id);
+      }
+
+      // Limpar após 30s
+      setTimeout(() => processedThreads.delete(msg.channel_id), 30000);
+      return;
+    }
+  }
+
+  // MODO IMEDIATO: Detectar THREAD_CREATE
   if (packet.t !== 'THREAD_CREATE') return;
+
   if (!config.enabled || !config.autoMessage) return;
 
   const data = packet.d;
   if (!data.newly_created || data.parent_id !== config.channelId) return;
   if (processedThreads.has(data.id)) return;
 
-  // Se modo delay ativo, deixar threadCreate handler lidar
-  if (config.waitForMessage > 0) return;
-
-  processedThreads.add(data.id);
   const startTime = Date.now();
+
+  console.log(`\n⚡ [RAW] Novo tópico detectado!`);
+  console.log(`   📌 Nome: ${data.name}`);
+  console.log(`   🆔 ID: ${data.id}`);
+  console.log(`   👤 Criador: ${data.owner_id}`);
+  console.log(`   🔍 [DEBUG] Tipo: ${data.type}, message_count: ${data.message_count}`);
+  console.log(`   🔍 [DEBUG] Tem message embutida: ${!!data.message}`);
+
+  // Sempre aguardar a primeira mensagem do criador, mesmo se já houver message embutida
+  if (config.waitForMessage > 0) {
+    console.log(`   ⏳ Aguardando primeira mensagem do criador (até ${config.waitForMessage}ms)...`);
+
+    // Configurar timeout
+    const timeout = setTimeout(async () => {
+      if (pendingThreads.has(data.id)) {
+        pendingThreads.delete(data.id);
+
+        // Enviar mesmo sem mensagem (timeout)
+        if (!processedThreads.has(data.id)) {
+          processedThreads.add(data.id);
+
+          try {
+            await sendMessageDirect(data.id, config.autoMessage);
+            const responseTime = Date.now() - startTime;
+
+            console.log(`   ⏰ Timeout - enviando mesmo assim`);
+            console.log(`   ✅ Mensagem enviada!`);
+            console.log(`   ⚡ Tempo de resposta: ${responseTime}ms\n`);
+
+            await printStatus();
+          } catch (error) {
+            console.error(`   ❌ Erro ao enviar: ${error.message}\n`);
+            processedThreads.delete(data.id);
+          }
+
+          setTimeout(() => processedThreads.delete(data.id), 30000);
+        }
+      }
+    }, config.waitForMessage);
+
+    // Guardar para monitoramento
+    pendingThreads.set(data.id, {
+      ownerId: data.owner_id,
+      startTime,
+      timeout
+    });
+
+    return;
+  }
+
+  // MODO IMEDIATO: Enviar direto
+  processedThreads.add(data.id);
 
   try {
     // ENVIAR PRIMEIRO - logs depois!
@@ -547,11 +650,6 @@ client.on('raw', async (packet) => {
 
     const responseTime = Date.now() - startTime;
 
-    // Logs após envio (não afeta latência)
-    console.log(`\n⚡ [RAW] Novo tópico detectado!`);
-    console.log(`   📌 Nome: ${data.name}`);
-    console.log(`   🆔 ID: ${data.id}`);
-    console.log(`   👤 Criador: ${data.owner_id}`);
     console.log(`   ✅ Mensagem enviada via RAW!`);
     console.log(`   ⚡ Tempo de resposta: ${responseTime}ms\n`);
 
@@ -613,82 +711,40 @@ client.on('messageCreate', async (message) => {
 });
 
 // Evento: Novo tópico (thread) criado
-// Fallback caso o raw handler falhe ou para modo delay
+// FALLBACK: Só executa se o RAW handler falhar
 client.on('threadCreate', async (thread, newlyCreated) => {
-  // Verificações rápidas primeiro (sem await)
+  // Verificações rápidas
   if (!config.enabled) return;
   if (!newlyCreated) return;
   if (thread.parentId !== config.channelId) return;
-  if (!config.autoMessage) {
-    console.error('   ❌ Mensagem automática não configurada!\n');
-    return;
-  }
+  if (!config.autoMessage) return;
 
-  // Verificar se já foi processado pelo raw handler (modo imediato)
-  if (processedThreads.has(thread.id) && config.waitForMessage === 0) {
-    return; // Já foi processado pelo raw
-  }
+  // Verificar se já foi processado pelo raw handler
+  if (processedThreads.has(thread.id)) return;
 
+  // Modo humanizado: verificar se está pendente (RAW está cuidando)
+  if (pendingThreads.has(thread.id)) return;
+
+  // Se chegou aqui, o RAW falhou - usar fallback
+  console.log(`\n⚠️ [FALLBACK] Processando tópico ${thread.id}`);
+
+  processedThreads.add(thread.id);
   const startTime = Date.now();
 
-  console.log(`\n🆕 Novo tópico detectado!`);
-  console.log(`   📌 Nome: ${thread.name}`);
-  console.log(`   🆔 ID: ${thread.id}`);
-  console.log(`   👤 Criador: ${thread.ownerId}`);
-
   try {
-    // Se waitForMessage > 0, aguardar a primeira mensagem do criador
-    if (config.waitForMessage > 0) {
-      console.log(`   ⏳ Aguardando primeira mensagem (até ${config.waitForMessage}ms)...`);
-
-      const filter = (msg) => msg.author.id === thread.ownerId;
-
-      try {
-        const collected = await thread.awaitMessages({
-          filter,
-          max: 1,
-          time: config.waitForMessage,
-          errors: ['time']
-        });
-
-        const firstMessage = collected.first();
-        console.log(`   📨 Primeira mensagem detectada de ${firstMessage.author.tag}`);
-      } catch (timeoutError) {
-        console.log(`   ⏰ Timeout - enviando mensagem mesmo assim`);
-      }
-    }
-
-    // Enviar mensagem diretamente (sem join - mais rápido)
-    // O join automático acontece ao enviar em threads públicas
-    await thread.send(config.autoMessage);
-
+    await sendMessageDirect(thread.id, config.autoMessage);
     const responseTime = Date.now() - startTime;
-    console.log(`   ✅ Mensagem enviada com sucesso!`);
+
+    console.log(`   ✅ Mensagem enviada via fallback!`);
     console.log(`   ⚡ Tempo de resposta: ${responseTime}ms\n`);
 
-    // Exibir status após envio
     await printStatus();
   } catch (error) {
-    // Tratamento detalhado de erros
-    let errorMsg = error.message;
-
-    if (error.code === 50001) {
-      errorMsg = 'Sem permissão para acessar este tópico.';
-    } else if (error.code === 50013) {
-      errorMsg = 'Sem permissão para enviar mensagens neste tópico.';
-    } else if (error.code === 10008) {
-      errorMsg = 'Mensagem não encontrada ou deletada.';
-    } else if (error.code === 50035) {
-      errorMsg = 'Mensagem inválida (muito longa ou formato incorreto).';
-    } else if (error.code === 40001) {
-      errorMsg = 'Conta não autorizada. Verifique o token.';
-    } else if (error.code === 10003) {
-      errorMsg = 'Canal/Tópico não encontrado.';
-    }
-
-    console.error(`   ❌ Erro: ${errorMsg}`);
-    console.error(`   📋 Código: ${error.code || 'N/A'}\n`);
+    console.error(`   ❌ Erro no fallback: ${error.message}\n`);
+    processedThreads.delete(thread.id);
   }
+
+  setTimeout(() => processedThreads.delete(thread.id), 30000);
 });
 
 // Evento: Erro de conexão
