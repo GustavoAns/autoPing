@@ -35,6 +35,8 @@
 | 🎭 **Modo humano** | Espera extra configurável após a mensagem do criador |
 | 💤 **Sleep após responder** | Pegou a vaga? O AutoPing desliga sozinho até você acordá-lo |
 | 🔔 **Som e modo alarme** | Aviso ao enviar ou alarme contínuo até você voltar ao PC |
+| 🔑 **Alerta de palavras** | Toca som ou alarme quando alguém escreve no canal uma palavra que você escolheu (`PinG` = `ping` = `PÍNG`) |
+| 🧩 **Modos de ping** | Arquitetura modular: hoje o modo **Tópico**, pronta para novos modos |
 | 🟢 **Status na bandeja** | Ícone muda de cor: ligado, desligado, sleep e pisca no alarme |
 | 🪶 **Levíssimo** | Oculto na bandeja usa **~12 MB de RAM** e CPU praticamente zero — feito para rodar enquanto você joga |
 | 🔐 **Token seguro** | Guardado no **Cofre do Windows** (criptografado), nunca em texto puro |
@@ -50,10 +52,17 @@
   </tr>
   <tr>
     <td align="center"><img src="docs/screenshots/sleep.png" width="300" alt="Sleep" /><br /><sub><b>🔵 Sleep</b> (após responder)</sub></td>
-    <td align="center"><img src="docs/screenshots/alarm.png" width="300" alt="Alarme" /><br /><sub><b>🟠 Alarme</b> tocando</sub></td>
+    <td align="center"><img src="docs/screenshots/alarm.png" width="300" alt="Alarme" /><br /><sub><b>🟠 Alarme</b> após responder</sub></td>
   </tr>
   <tr>
-    <td align="center" colspan="2"><img src="docs/screenshots/config.png" width="300" alt="Configurações" /><br /><sub><b>⚙️ Configurações</b></sub></td>
+    <td align="center" colspan="2"><img src="docs/screenshots/keyword.png" width="300" alt="Alerta de palavras" /><br /><sub><b>🔑 Alerta de palavras</b> disparado</sub></td>
+  </tr>
+</table>
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/config-general.png" width="220" alt="Configurações - Geral" /><br /><sub><b>⚙️ Geral</b></sub></td>
+    <td align="center"><img src="docs/screenshots/config-mode.png" width="220" alt="Configurações - Modo" /><br /><sub><b>🧩 Modo</b></sub></td>
+    <td align="center"><img src="docs/screenshots/config-alerts.png" width="220" alt="Configurações - Alertas" /><br /><sub><b>🔔 Alertas</b></sub></td>
   </tr>
 </table>
 </div>
@@ -100,6 +109,24 @@ sequenceDiagram
 
 Se o criador não escrever nada dentro do tempo limite (ex.: tópico criado a partir de uma mensagem existente), o AutoPing envia mesmo assim.
 
+### 🧩 Modos de ping
+
+O que dispara uma resposta é definido pelo **modo de ping** ativo. Hoje existe:
+
+| Modo | O que faz |
+|---|---|
+| **Tópico** | Responde novos tópicos do canal observado, logo após a 1ª mensagem do criador |
+
+Sleep, som/alarme e alerta de palavras são **gerais**: valem para qualquer modo.
+
+### 🔑 Alerta de palavras
+
+Independente do modo e do status (funciona até com o bot desligado): quando uma mensagem enviada **no canal observado** contém uma das palavras ou frases da sua lista, o AutoPing toca **som** ou **alarme**.
+
+- Maiúsculas, acentos e espaços extras são ignorados: `PinG`, `ping` e `PÍNG` são iguais.
+- Basta *conter* o texto: `ping` também dispara em `shopping`.
+- Suas próprias mensagens e as mensagens dentro de tópicos não disparam.
+
 ## 🖱️ Uso
 
 | Ação | Como |
@@ -107,7 +134,7 @@ Se o criador não escrever nada dentro do tempo limite (ex.: tópico criado a pa
 | Abrir / ocultar | Clique no ícone da bandeja |
 | Ligar / desligar | Botão na janela ou menu da bandeja |
 | Acordar do sleep | Botão **Acordar** 🔵 |
-| Parar alarme | Botão **Parar alarme** 🟠, clique no ícone ou menu da bandeja |
+| Parar alarme | Botão **Parar alarme** 🟠, clique no ícone ou menu da bandeja (vale para resposta e alerta de palavras) |
 | Configurações | Engrenagem ⚙️ |
 | Sair | Menu da bandeja → **Sair** |
 
@@ -118,21 +145,34 @@ Se o criador não escrever nada dentro do tempo limite (ex.: tópico criado a pa
 | 🟢 | Ligado — respondendo novos tópicos |
 | 🔴 | Desligado |
 | 🔵 | Sleep — desligou sozinho após responder |
-| 🟠 piscando | Alarme tocando — mensagem enviada! |
+| 🟠 piscando | Alarme tocando — mensagem enviada ou palavra detectada |
 | ◯ anel vazado | Sem conexão com o Discord (reconectando ou token inválido) |
 
 ### ⚙️ Configurações
 
+**Geral**
+
 | Opção | Padrão | Descrição |
 |---|:---:|---|
 | Token | — | Salvo no Cofre do Windows; deixe vazio para manter |
-| Canal | — | Canal de texto, fórum, mídia ou anúncios onde os tópicos são criados |
+| Canal observado | — | Canal de texto, fórum, mídia ou anúncios |
+| Sleep após responder | ❌ | Depois de responder, desliga até você acordar |
+
+**Modo — Tópico**
+
+| Opção | Padrão | Descrição |
+|---|:---:|---|
 | Mensagem | — | Texto enviado (até 2000 caracteres) |
 | Aguardar 1ª msg do criador | `5000 ms` | Tempo máximo esperando a mensagem do criador |
 | Modo humano | `900 ms` ✅ | Espera extra após a mensagem do criador. Desligado = mais rápido |
-| Sleep após responder | ❌ | Depois de responder, desliga até você acordar |
-| Som ao enviar | ✅ | Aviso curto quando a mensagem sai |
-| Modo alarme | ❌ | Toca sem parar até você desligar |
+
+**Alertas**
+
+| Opção | Padrão | Descrição |
+|---|:---:|---|
+| Som ao responder | ✅ | Aviso curto quando a mensagem sai |
+| Alarme ao responder | ❌ | Toca sem parar até você desligar |
+| Alerta de palavras | ❌ | Lista de palavras/frases (uma por linha) + tocar **Som** ou **Alarme** |
 
 Todas as mudanças valem **na hora**, sem reiniciar.
 
@@ -162,8 +202,12 @@ src-tauri/src/
 ├── tray.rs             # ícone da bandeja e menu
 ├── window.rs           # janela compacta
 ├── core/
-│   ├── bot.rs          # regras de envio, timers, status e sleep
-│   └── humanized.rs    # espera pela 1ª mensagem do criador
+│   ├── reply.rs        # envio comum a todos os modos: status, sleep, dedupe
+│   ├── text.rs         # normalização (maiúsculas, acentos, espaços)
+│   ├── modes/          # modos de ping (trait Mode + ModeRunner)
+│   │   └── thread/     # modo Tópico + espera pela 1ª msg do criador
+│   └── features/
+│       └── keyword_alert.rs  # alerta de palavras
 └── discord/
     ├── gateway.rs      # conexão WebSocket com o Discord
     ├── rest.rs         # envio de mensagens

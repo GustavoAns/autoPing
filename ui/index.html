@@ -24,20 +24,14 @@
         </div>
       </header>
 
-      <div class="body">
+      <div class="body" id="main-body">
         <div class="row">
           <span class="key">Canal</span>
           <span class="val" id="m-channel">—</span>
         </div>
-        <div class="row">
-          <span class="key">Mensagem</span>
-          <span class="val mono" id="m-message">—</span>
-        </div>
-        <div class="chips">
-          <span class="chip" id="m-human">Modo humano</span>
-          <span class="chip" id="m-sleep">Sleep</span>
-          <span class="chip" id="m-sound">Som</span>
-        </div>
+        <!-- linhas específicas do modo ativo (MODES[mode].summary) -->
+        <div id="m-mode-rows"></div>
+        <div class="chips" id="m-chips"></div>
       </div>
 
       <footer class="foot">
@@ -62,63 +56,85 @@
         </div>
       </header>
 
+      <nav class="tabs" role="tablist">
+        <button type="button" class="tab active" data-tab="general">Geral</button>
+        <button type="button" class="tab" data-tab="mode">Modo</button>
+        <button type="button" class="tab" data-tab="alerts">Alertas</button>
+      </nav>
+
       <form class="body form" id="form" autocomplete="off">
-        <label class="field">
-          <span class="key">Token</span>
-          <input type="password" id="f-token" spellcheck="false" />
-          <small id="f-token-hint">Salvo no Cofre do Windows.</small>
-        </label>
+        <!-- ── Geral ── -->
+        <div class="pane" data-pane="general">
+          <label class="field">
+            <span class="key">Token</span>
+            <input type="password" id="f-token" spellcheck="false" autocomplete="off" />
+            <small id="f-token-hint">Salvo no Cofre do Windows.</small>
+          </label>
 
-        <label class="field">
-          <span class="key">Canal <button type="button" class="link" id="btn-refresh">atualizar lista</button></span>
-          <select id="f-channel-select"></select>
-          <input type="text" id="f-channel" inputmode="numeric" placeholder="ID do canal" spellcheck="false" />
-        </label>
+          <label class="field">
+            <span class="key">Canal observado <button type="button" class="link" id="btn-refresh">atualizar lista</button></span>
+            <select id="f-channel-select"></select>
+            <input type="text" id="f-channel" inputmode="numeric" placeholder="ID do canal" spellcheck="false" />
+          </label>
 
-        <label class="field">
-          <span class="key">Mensagem <small class="counter" id="f-count">0/2000</small></span>
-          <textarea id="f-message" rows="2" maxlength="2000"></textarea>
-        </label>
-
-        <label class="field">
-          <span class="key">Aguardar 1ª msg do criador (ms)</span>
-          <input type="number" id="f-wait" min="500" step="100" />
-        </label>
-
-        <div class="switch-row">
-          <div>
-            <span class="key">Modo humano</span>
-            <small>Espera extra após a msg do criador</small>
-          </div>
-          <div class="inline">
-            <input type="number" id="f-delay" min="0" max="60000" step="50" class="small" />
-            <span class="unit">ms</span>
-            <input type="checkbox" class="switch" id="f-human" />
+          <div class="switch-row">
+            <div>
+              <span class="key">Sleep após responder</span>
+              <small>Desliga sozinho até você ligar de novo</small>
+            </div>
+            <input type="checkbox" class="switch" id="f-sleep" />
           </div>
         </div>
 
-        <div class="switch-row">
-          <div>
-            <span class="key">Sleep após responder</span>
-            <small>Desliga sozinho até você ligar de novo</small>
-          </div>
-          <input type="checkbox" class="switch" id="f-sleep" />
+        <!-- ── Modo ── -->
+        <div class="pane" data-pane="mode" hidden>
+          <label class="field">
+            <span class="key">Modo de ping</span>
+            <select id="f-mode"></select>
+            <small id="f-mode-desc"></small>
+          </label>
+          <!-- campos do modo selecionado (MODES[mode].fields) -->
+          <div id="f-mode-fields" class="pane-fields"></div>
         </div>
 
-        <div class="switch-row">
-          <div>
-            <span class="key">Som ao enviar <button type="button" class="link" data-test="ding">testar</button></span>
-            <small>Aviso curto quando a mensagem sai</small>
+        <!-- ── Alertas ── -->
+        <div class="pane" data-pane="alerts" hidden>
+          <p class="section">Ao responder</p>
+          <div class="switch-row">
+            <div>
+              <span class="key">Som <button type="button" class="link" data-test="ding">testar</button></span>
+              <small>Aviso curto quando a mensagem sai</small>
+            </div>
+            <input type="checkbox" class="switch" id="f-sound" />
           </div>
-          <input type="checkbox" class="switch" id="f-sound" />
-        </div>
+          <div class="switch-row">
+            <div>
+              <span class="key">Alarme <button type="button" class="link" data-test="alarm">testar</button></span>
+              <small>Toca sem parar até você desligar</small>
+            </div>
+            <input type="checkbox" class="switch alarm" id="f-alarm" />
+          </div>
 
-        <div class="switch-row">
-          <div>
-            <span class="key">Modo alarme <button type="button" class="link" data-test="alarm">testar</button></span>
-            <small>Toca sem parar até você desligar</small>
+          <p class="section">Alerta de palavras</p>
+          <div class="switch-row">
+            <div>
+              <span class="key">Ativar</span>
+              <small>Toca quando uma mensagem do canal contém uma das palavras</small>
+            </div>
+            <input type="checkbox" class="switch" id="f-kw-enabled" />
           </div>
-          <input type="checkbox" class="switch alarm" id="f-alarm" />
+          <label class="field">
+            <span class="key">Palavras <small class="counter" id="f-kw-count">0</small></span>
+            <textarea id="f-kw-list" rows="3" placeholder="uma por linha&#10;ex.: ping&#10;vaga aberta" spellcheck="false"></textarea>
+            <small>Maiúsculas, acentos e espaços extras são ignorados.</small>
+          </label>
+          <div class="switch-row">
+            <span class="key">Tocar</span>
+            <div class="segmented" role="radiogroup">
+              <label><input type="radio" name="f-kw-sound" value="ding" /><span>Som</span></label>
+              <label><input type="radio" name="f-kw-sound" value="alarm" /><span>Alarme</span></label>
+            </div>
+          </div>
         </div>
 
         <p class="error" id="f-error" hidden></p>

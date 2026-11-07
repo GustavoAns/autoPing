@@ -2,7 +2,7 @@
 //! `reqwest::Client` com conexões keep-alive pré-aquecidas.
 
 use super::properties::{self, API_VERSION, LOCALE};
-use crate::core::bot::{SendFuture, Sender};
+use crate::core::reply::{SendFuture, Sender};
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, ORIGIN, USER_AGENT};
 use serde::Deserialize;
 use serde_json::json;

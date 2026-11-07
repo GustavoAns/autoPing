@@ -100,17 +100,63 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .val.warn { color: var(--off); }
 .mono { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; }
 
-.chips { display: flex; gap: 6px; padding-top: 2px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 2px; }
 .chip {
   font-size: 11px; font-weight: 600;
   padding: 3px 9px; border-radius: 999px;
   background: var(--surface); color: var(--muted);
   border: 1px solid var(--border);
+  white-space: nowrap;
 }
 .chip.active { color: var(--text); }
 .chip.active::before { content: "● "; color: var(--on); }
-.chip#m-sleep.active::before { color: var(--sleep); }
-.chip#m-sound.active::before { color: var(--alarm); }
+.chip[data-color="sleep"].active::before { color: var(--sleep); }
+.chip[data-color="alarm"].active::before { color: var(--alarm); }
+.chip[data-color="mode"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+.chip[data-color="mode"]::before { content: none; }
+
+/* Tela principal: altura segue o conteúdo (medida no JS). */
+#view-main .body { flex: none; padding-bottom: 2px; }
+#view-main .foot { margin-top: auto; }
+
+/* ── Abas da configuração ─────────────────────────── */
+.tabs {
+  flex: none;
+  display: flex; gap: 4px;
+  margin: 0 14px 10px;
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.tab {
+  flex: 1; height: 26px; border-radius: 7px;
+  font-size: 12px; font-weight: 600; color: var(--muted);
+}
+.tab:hover { color: var(--text); }
+.tab.active { background: var(--bg); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / .15); }
+
+.pane { display: flex; flex-direction: column; gap: 12px; }
+.pane[hidden] { display: none; }
+.pane-fields { display: flex; flex-direction: column; gap: 12px; }
+.section {
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text); padding-top: 2px; border-top: 1px solid var(--border); padding-top: 10px;
+}
+.section:first-child { border-top: 0; padding-top: 0; }
+
+/* Seletor Som | Alarme */
+.segmented {
+  display: inline-flex; padding: 2px; gap: 2px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+}
+.segmented input { display: none; }
+.segmented span {
+  display: block; padding: 3px 12px; border-radius: 6px;
+  font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer;
+}
+.segmented input:checked + span { background: var(--bg); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / .15); }
+.segmented input[value="alarm"]:checked + span { color: var(--alarm); }
 
 /* ── Rodapé ───────────────────────────────────────── */
 .foot {

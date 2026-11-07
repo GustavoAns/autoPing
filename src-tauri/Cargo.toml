@@ -1,6 +1,6 @@
 [package]
 name = "autoping"
-version = "3.0.0"
+version = "3.1.0"
 description = "AutoPing - responde automaticamente a novos tópicos do Discord"
 authors = ["GustavoAns"]
 license = "MIT"
@@ -25,6 +25,7 @@ futures-util = { version = "0.3", default-features = false, features = ["sink", 
 reqwest = { version = "0.12", default-features = false, features = ["native-tls", "json"] }
 keyring = { version = "3", features = ["windows-native"] }
 base64 = "0.22"
+unicode-normalization = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Media_Audio"] }

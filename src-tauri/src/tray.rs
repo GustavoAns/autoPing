@@ -109,7 +109,7 @@ pub fn create(app: &AppHandle, engine: Arc<Engine>) -> tauri::Result<()> {
         })
         .on_tray_icon_event(move |tray, event| {
             if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
-                if engine.snapshot().alarm_ringing {
+                if engine.is_alarm_ringing() {
                     engine.stop_alarm();
                     window::show(tray.app_handle());
                 } else {
@@ -126,7 +126,7 @@ pub fn create(app: &AppHandle, engine: Arc<Engine>) -> tauri::Result<()> {
 pub fn update(app: &AppHandle, snap: &Snapshot) {
     let Some(tray) = app.tray_by_id(ID) else { return };
 
-    if snap.alarm_ringing {
+    if snap.alert.is_some() {
         start_blink(app);
     } else {
         BLINKING.store(false, Ordering::SeqCst);
@@ -134,7 +134,11 @@ pub fn update(app: &AppHandle, snap: &Snapshot) {
     }
 
     let channel = snap.channel.name.as_ref().map(|n| format!("#{n}")).unwrap_or_else(|| "sem canal".into());
-    let alarm = if snap.alarm_ringing { "\n🔔 Mensagem enviada! Clique para parar o alarme" } else { "" };
+    let alarm = snap
+        .alert
+        .as_ref()
+        .map(|a| format!("\n🔔 {} Clique para parar o alarme", a.reason))
+        .unwrap_or_default();
     let _ = tray.set_tooltip(Some(format!(
         "AutoPing - {} ({})\n{}{}",
         status_label(snap.status),
@@ -144,7 +148,7 @@ pub fn update(app: &AppHandle, snap: &Snapshot) {
     )));
     if let Some(items) = app.try_state::<Items>() {
         let _ = items.toggle.set_text(if snap.status == Status::On { "Desligar" } else { "Ligar" });
-        let _ = items.stop_alarm.set_enabled(snap.alarm_ringing);
+        let _ = items.stop_alarm.set_enabled(snap.alert.is_some());
     }
 }
 
