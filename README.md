@@ -36,7 +36,7 @@
 | 💤 **Sleep após responder** | Pegou a vaga? O AutoPing desliga sozinho até você acordá-lo |
 | 🔔 **Som e modo alarme** | Aviso ao enviar ou alarme contínuo até você voltar ao PC |
 | 🔑 **Alerta de palavras** | Toca som ou alarme quando alguém escreve no canal uma palavra que você escolheu (`PinG` = `ping` = `PÍNG`) |
-| 🧩 **Modos de ping** | Arquitetura modular: hoje o modo **Tópico**, pronta para novos modos |
+| 🧩 **Modos e módulos** | Escolha *um* modo de ping (hoje: **Tópico**) e combine os módulos gerais que quiser ([como funciona](#-modos-e-módulos)) |
 | 🟢 **Status na bandeja** | Ícone muda de cor: ligado, desligado, sleep e pisca no alarme |
 | 🪶 **Levíssimo** | Oculto na bandeja usa **~12 MB de RAM** e CPU praticamente zero — feito para rodar enquanto você joga |
 | 🔐 **Token seguro** | Guardado no **Cofre do Windows** (criptografado), nunca em texto puro |
@@ -109,15 +109,48 @@ sequenceDiagram
 
 Se o criador não escrever nada dentro do tempo limite (ex.: tópico criado a partir de uma mensagem existente), o AutoPing envia mesmo assim.
 
-### 🧩 Modos de ping
+### 🧩 Modos e módulos
 
-O que dispara uma resposta é definido pelo **modo de ping** ativo. Hoje existe:
+O AutoPing é dividido em duas partes:
+
+| | **Modo de ping** | **Módulos gerais** |
+|---|---|---|
+| O que é | A estratégia de resposta: *quando* e *o que* enviar | Recursos extras que funcionam junto com qualquer modo |
+| Quantos ativos | **Um por vez** (escolhido na aba **Modo**) | **Quantos quiser** (cada um liga/desliga sozinho) |
+| Onde configura | Aba **Modo** | Abas **Geral** e **Alertas** |
+
+```mermaid
+flowchart LR
+    D[Mensagens e tópicos<br/>do canal observado] --> M
+    D --> K
+    subgraph M [Modo de ping · 1 ativo]
+        T[Tópico]
+        F[Próximos modos...]
+    end
+    subgraph G [Módulos gerais · combináveis]
+        S[💤 Sleep após responder]
+        A[🔔 Som / alarme ao responder]
+        K[🔑 Alerta de palavras]
+    end
+    M -- respondeu --> S
+    M -- respondeu --> A
+```
+
+**Modos disponíveis**
 
 | Modo | O que faz |
 |---|---|
 | **Tópico** | Responde novos tópicos do canal observado, logo após a 1ª mensagem do criador |
 
-Sleep, som/alarme e alerta de palavras são **gerais**: valem para qualquer modo.
+Novos modos (outras formas de pingar) entram na lista sem mudar o resto: os módulos gerais continuam valendo para eles automaticamente.
+
+**Módulos gerais**
+
+| Módulo | Quando age | Depende do status? |
+|---|---|:---:|
+| 💤 **Sleep após responder** | Depois que o modo responde, desliga o bot até você acordá-lo | — |
+| 🔔 **Som / alarme ao responder** | Depois que o modo responde | Sim (só há resposta com o bot ligado) |
+| 🔑 **Alerta de palavras** | Quando chega no canal uma mensagem com uma das suas palavras | **Não**: funciona até com o bot desligado ou em sleep |
 
 ### 🔑 Alerta de palavras
 
