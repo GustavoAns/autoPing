@@ -16,7 +16,7 @@ App desktop Windows (Tauri v2 + Rust) que roda na **conta de usuário** do Disco
 - **Status**: `on` (verde, responde) / `off` (vermelho, manual) / `sleep` (azul, entra sozinho após responder se `sleepAfterReply`). Off/Sleep bloqueiam envio e cancelam pendentes. Sleep volta com "Acordar".
 - **Som/alarme**: após enviar, "ding" (`soundOnReply`) ou, com `alarmOnReply`, alarme em loop até o usuário parar (o usuário precisa agir de verdade após conseguir a vaga e pode estar longe do PC).
 - **Modos de ping** (`mode`): definem QUANDO/O QUE responder. Hoje só `thread` (Tópico). Arquitetura pronta para novos modos.
-- **Features gerais** (valem para qualquer modo): sleep após responder, som/alarme ao responder e **alerta de palavras** — mensagem no **canal observado** (não nos tópicos) que *contém* alguma palavra/frase da lista → som ou alarme. Comparação normalizada (`PinG` = `ping` = `PÍNG`: NFKD sem acentos, minúsculas, espaços colapsados). **Independente do status** (alerta mesmo Off/Sleep). Ignora mensagens da própria conta; cooldown 2s.
+- **Features gerais** (valem para qualquer modo): sleep após responder, som/alarme ao responder e **alerta de palavras** — mensagem no **canal observado** (não nos tópicos) que *contém* alguma palavra/frase da lista → som ou alarme. Comparação normalizada (`PinG` = `ping` = `PÍNG`: NFKD sem acentos, minúsculas, espaços colapsados). **Independente do status** (alerta mesmo Off/Sleep). Mensagens da própria conta CONTAM (permite testar sozinho), exceto a resposta automática do bot (mesmo texto da `autoMessage`); cooldown 2s. Log "Alerta de palavras: recebendo mensagens do canal observado" (1x por ativação) serve de diagnóstico.
 - App roda **enquanto o usuário joga** → **leveza** é requisito: janela oculta = WebView destruída (~12MB, 1 processo, CPU ~0).
 
 > ⚠️ Self-bots violam os ToS do Discord (risco de ban). O token dá acesso total à conta — nunca logar, commitar, exibir ou enviar a terceiros. Não adicionar libs de selfbot de terceiros (risco de roubo de token).
@@ -115,12 +115,14 @@ THREAD_CREATE (`newly_created`, `parent_id == channelId`, status On) → `Humani
 - Keep-warm: ping REST a cada 30s.
 
 ### UI / janela / bandeja
-- Janela 340×(auto, mín. 170) principal / 560 config, sem borda, transparente, sempre por cima, sem taskbar. **Ocultar/fechar = `destroy()`** (libera WebView2). Sair só pelo menu da bandeja (`RunEvent::ExitRequested` com `code: None` é bloqueado).
+- Janela 340×(auto, mín. 170) principal / 500 config, sem borda, transparente, sempre por cima, sem taskbar. **Ocultar/fechar = `destroy()`** (libera WebView2). Sair só pelo menu da bandeja (`RunEvent::ExitRequested` com `code: None` é bloqueado).
 - 1º uso (sem token/canal) abre a config; configurado inicia só na bandeja.
 - Tray: verde/vermelho/azul; anel vazado = sem conexão; pisca laranja com alarme; clique esquerdo abre/oculta (ou para o alarme).
 - Comandos IPC: `get_snapshot`, `update_config`, `set_token`, `set_status`, `list_channels`, `stop_alarm`, `test_sound`, `hide_window`, `resize_window`.
 - Snapshot: `status, connection, hasToken, user, channel, mode, thread, sleepAfterReply, soundOnReply, alarmOnReply, keywordAlert, alert{source,reason}|null, lastReply, lastKeywordHit`.
-- Tela principal: altura automática (JS mede e chama `resize_window`); config 560px em abas.
+- Tela principal: altura automática (JS mede e chama `resize_window`); config 500px em abas.
+- **Convenção UI: toda opção opcional é um cartão colapsável** (`.opt` > `.opt-head` [`.opt-title` + `.opt-sum` + switch] + `.opt-body`), recolhido por padrão; resumo de uma linha via `GENERAL_SUMMARIES` ou `MODES[x].summaries` no `app.js`. Campos obrigatórios (token, canal, mensagem) ficam sempre visíveis.
+- CSP `default-src 'self'`: nada de `data:`/URLs externas em CSS/HTML (ícones via CSS puro ou SVG inline).
 
 ## Convenções
 

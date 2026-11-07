@@ -92,6 +92,8 @@ pub struct Engine {
     keywords: Mutex<KeywordAlert>,
     /// Atalho sem lock para o caminho quente.
     keywords_active: AtomicBool,
+    /// Já recebeu alguma mensagem do canal desde a última ativação (diagnóstico).
+    keywords_seen: AtomicBool,
     rest: SharedRest,
     cache: Mutex<Cache>,
     gateway: Mutex<Option<GatewayHandle>>,
@@ -119,6 +121,7 @@ impl Engine {
                 config_path,
                 runner: ModeRunner::new(&cfg, Arc::new(rest.clone()), notify),
                 keywords_active: AtomicBool::new(keywords.is_active()),
+                keywords_seen: AtomicBool::new(false),
                 keywords: Mutex::new(keywords),
                 rest,
                 cache: Mutex::new(Cache::default()),
@@ -199,6 +202,9 @@ impl Engine {
     /// Deve ser chamado dentro do runtime tokio.
     pub fn start(self: &Arc<Self>, token: Option<String>) {
         logf!("AutoPing iniciado (modo {:?})", self.runner.kind());
+        if self.keywords_active.load(Ordering::Acquire) {
+            logf!("Alerta de palavras ativo ({} palavra(s))", lock(&self.cfg).keyword_alert.keywords.len());
+        }
         // Keep-warm: mantém a conexão HTTPS aberta para o envio ser rápido.
         let w = Arc::downgrade(self);
         tokio::spawn(async move {
@@ -363,6 +369,10 @@ impl Engine {
             let mut k = lock(&self.keywords);
             k.apply(&next.keyword_alert);
             self.keywords_active.store(k.is_active(), Ordering::Release);
+            self.keywords_seen.store(false, Ordering::Release);
+            if k.is_active() {
+                logf!("Alerta de palavras ativo ({} palavra(s), {:?})", next.keyword_alert.keywords.len(), next.keyword_alert.sound);
+            }
         }
         *lock(&self.cfg) = next;
     }
@@ -478,12 +488,22 @@ impl Engine {
     }
 
     fn on_keyword_message(&self, msg: &MessageEvent) {
-        let channel_id = lock(&self.cfg).channel_id.clone();
+        let (channel_id, auto_message) = {
+            let c = lock(&self.cfg);
+            (c.channel_id.clone(), c.modes.thread.auto_message.clone())
+        };
+        if msg.channel_id != channel_id {
+            return;
+        }
+        // Diagnóstico: confirma (uma vez por ativação) que o canal está chegando.
+        if !self.keywords_seen.swap(true, Ordering::AcqRel) {
+            logf!("Alerta de palavras: recebendo mensagens do canal observado");
+        }
         let self_id = lock(&self.rt).self_id.clone();
         let hit = lock(&self.keywords).check(
             &keyword_alert::Message { channel_id: msg.channel_id, author_id: msg.author_id, content: msg.content },
             &channel_id,
-            self_id.as_deref(),
+            self_id.as_deref().map(|id| (id, auto_message.as_str())),
             tokio::time::Instant::now(),
         );
         let Some(hit) = hit else { return };

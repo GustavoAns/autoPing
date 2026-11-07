@@ -4,7 +4,7 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
-const CONFIG_HEIGHT = 560;
+const CONFIG_HEIGHT = 500;
 const MIN_MAIN_HEIGHT = 170;
 
 const $ = (id) => document.getElementById(id);
@@ -41,15 +41,17 @@ const MODES = {
         <span class="key">Aguardar 1ª msg do criador (ms)</span>
         <input type="number" id="f-wait" min="500" step="100" />
       </label>
-      <div class="switch-row">
-        <div>
-          <span class="key">Modo humano</span>
-          <small>Espera extra após a msg do criador</small>
-        </div>
-        <div class="inline">
-          <input type="number" id="f-delay" min="0" max="60000" step="50" class="small" />
-          <span class="unit">ms</span>
+      <div class="opt" data-opt="human">
+        <div class="opt-head">
+          <button type="button" class="opt-title"><span class="chev"></span><span class="key">Modo humano</span><small class="opt-sum"></small></button>
           <input type="checkbox" class="switch" id="f-human" />
+        </div>
+        <div class="opt-body">
+          <small>Espera extra após a mensagem do criador, para parecer digitado. Desligado = mais rápido.</small>
+          <div class="inline">
+            <input type="number" id="f-delay" min="0" max="60000" step="50" class="small" />
+            <span class="unit">ms</span>
+          </div>
         </div>
       </div>`,
     bind() {
@@ -58,6 +60,9 @@ const MODES = {
       $('f-message').addEventListener('input', counter);
       $('f-human').addEventListener('change', human);
       this._sync = () => { counter(); human(); };
+    },
+    summaries: {
+      human: () => ($('f-human').checked ? `${Number($('f-delay').value) || 0}ms` : ''),
     },
     fill(s) {
       const t = s.thread || {};
@@ -247,7 +252,47 @@ function renderModeFields(modeKey) {
   $('f-mode-fields').innerHTML = mode.fields;
   mode.bind();
   mode.fill(snap || {});
+  updateSummaries();
 }
+
+// ── Opções colapsáveis ─────────────────────────────────────────
+// Toda opção opcional é um cartão `.opt`: título + resumo + chave; o corpo
+// (detalhes) abre/fecha clicando no título. Começam recolhidas.
+const GENERAL_SUMMARIES = {
+  keywords: () => {
+    const n = parseKeywords().length;
+    const sound = document.querySelector('input[name="f-kw-sound"]:checked')?.value === 'alarm' ? 'Alarme' : 'Som';
+    return $('f-kw-enabled').checked ? `${n} palavra${n === 1 ? '' : 's'} · ${sound}` : '';
+  },
+};
+
+function updateSummaries() {
+  const modeSummaries = (MODES[$('f-mode').value] || MODES.thread).summaries || {};
+  document.querySelectorAll('#form .opt').forEach((card) => {
+    const fn = modeSummaries[card.dataset.opt] || GENERAL_SUMMARIES[card.dataset.opt];
+    const sum = card.querySelector('.opt-sum');
+    if (sum) sum.textContent = fn ? fn() : '';
+  });
+}
+
+function collapseAll() {
+  document.querySelectorAll('#form .opt').forEach((c) => c.classList.remove('open'));
+}
+
+$('form').addEventListener('click', (e) => {
+  const title = e.target.closest('.opt-title');
+  if (title) title.closest('.opt').classList.toggle('open');
+});
+$('form').addEventListener('input', updateSummaries);
+$('form').addEventListener('change', updateSummaries);
+
+// Ligou o alerta sem palavras: abre o cartão para preencher.
+$('f-kw-enabled').addEventListener('change', (e) => {
+  if (e.target.checked && parseKeywords().length === 0) {
+    e.target.closest('.opt').classList.add('open');
+    $('f-kw-list').focus();
+  }
+});
 
 function parseKeywords() {
   return $('f-kw-list').value.split('\n').map((s) => s.trim()).filter(Boolean);
@@ -286,6 +331,8 @@ function openConfig(tab = 'general') {
   $('f-kw-list').value = (kw.keywords || []).join('\n');
   document.querySelectorAll('input[name="f-kw-sound"]').forEach((r) => (r.checked = r.value === (kw.sound || 'ding')));
   syncKeywordFields();
+  collapseAll();
+  updateSummaries();
 
   showError('');
   fillChannelSelect($('f-channel').value);
@@ -354,6 +401,11 @@ $('form').addEventListener('submit', async (e) => {
     openMain();
   } catch (err) {
     showError(String(err));
+    // Abre o cartão relacionado ao erro, se houver.
+    if (/palavra/i.test(String(err))) {
+      selectTab('alerts');
+      document.querySelector('.opt[data-opt="keywords"]')?.classList.add('open');
+    }
   } finally {
     save.disabled = false;
     save.textContent = 'Salvar';

@@ -125,7 +125,7 @@ Independente do modo e do status (funciona até com o bot desligado): quando uma
 
 - Maiúsculas, acentos e espaços extras são ignorados: `PinG`, `ping` e `PÍNG` são iguais.
 - Basta *conter* o texto: `ping` também dispara em `shopping`.
-- Suas próprias mensagens e as mensagens dentro de tópicos não disparam.
+- Mensagens dentro de tópicos não disparam. Suas próprias mensagens disparam (dá para testar sozinho), exceto a resposta automática do bot.
 
 ## 🖱️ Uso
 

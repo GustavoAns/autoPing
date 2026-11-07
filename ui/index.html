@@ -77,12 +77,14 @@
             <input type="text" id="f-channel" inputmode="numeric" placeholder="ID do canal" spellcheck="false" />
           </label>
 
-          <div class="switch-row">
-            <div>
-              <span class="key">Sleep após responder</span>
-              <small>Desliga sozinho até você ligar de novo</small>
+          <div class="opt" data-opt="sleep">
+            <div class="opt-head">
+              <button type="button" class="opt-title"><span class="chev"></span><span class="key">Sleep após responder</span><small class="opt-sum"></small></button>
+              <input type="checkbox" class="switch" id="f-sleep" />
             </div>
-            <input type="checkbox" class="switch" id="f-sleep" />
+            <div class="opt-body">
+              <small>Depois de responder, desliga sozinho (🔵) até você clicar em Acordar.</small>
+            </div>
           </div>
         </div>
 
@@ -99,40 +101,45 @@
 
         <!-- ── Alertas ── -->
         <div class="pane" data-pane="alerts" hidden>
-          <p class="section">Ao responder</p>
-          <div class="switch-row">
-            <div>
-              <span class="key">Som <button type="button" class="link" data-test="ding">testar</button></span>
-              <small>Aviso curto quando a mensagem sai</small>
+          <div class="opt" data-opt="sound">
+            <div class="opt-head">
+              <button type="button" class="opt-title"><span class="chev"></span><span class="key">Som ao responder</span><small class="opt-sum"></small></button>
+              <input type="checkbox" class="switch" id="f-sound" />
             </div>
-            <input type="checkbox" class="switch" id="f-sound" />
-          </div>
-          <div class="switch-row">
-            <div>
-              <span class="key">Alarme <button type="button" class="link" data-test="alarm">testar</button></span>
-              <small>Toca sem parar até você desligar</small>
+            <div class="opt-body">
+              <small>Aviso curto quando a mensagem sai. <button type="button" class="link" data-test="ding">testar</button></small>
             </div>
-            <input type="checkbox" class="switch alarm" id="f-alarm" />
           </div>
 
-          <p class="section">Alerta de palavras</p>
-          <div class="switch-row">
-            <div>
-              <span class="key">Ativar</span>
-              <small>Toca quando uma mensagem do canal contém uma das palavras</small>
+          <div class="opt" data-opt="alarm">
+            <div class="opt-head">
+              <button type="button" class="opt-title"><span class="chev"></span><span class="key">Alarme ao responder</span><small class="opt-sum"></small></button>
+              <input type="checkbox" class="switch alarm" id="f-alarm" />
             </div>
-            <input type="checkbox" class="switch" id="f-kw-enabled" />
+            <div class="opt-body">
+              <small>Toca sem parar até você desligar (substitui o som). <button type="button" class="link" data-test="alarm">testar</button></small>
+            </div>
           </div>
-          <label class="field">
-            <span class="key">Palavras <small class="counter" id="f-kw-count">0</small></span>
-            <textarea id="f-kw-list" rows="3" placeholder="uma por linha&#10;ex.: ping&#10;vaga aberta" spellcheck="false"></textarea>
-            <small>Maiúsculas, acentos e espaços extras são ignorados.</small>
-          </label>
-          <div class="switch-row">
-            <span class="key">Tocar</span>
-            <div class="segmented" role="radiogroup">
-              <label><input type="radio" name="f-kw-sound" value="ding" /><span>Som</span></label>
-              <label><input type="radio" name="f-kw-sound" value="alarm" /><span>Alarme</span></label>
+
+          <div class="opt" data-opt="keywords">
+            <div class="opt-head">
+              <button type="button" class="opt-title"><span class="chev"></span><span class="key">Alerta de palavras</span><small class="opt-sum"></small></button>
+              <input type="checkbox" class="switch" id="f-kw-enabled" />
+            </div>
+            <div class="opt-body">
+              <small>Toca quando uma mensagem do canal observado contém uma das palavras. Funciona mesmo com o bot desligado.</small>
+              <label class="field">
+                <span class="key">Palavras <small class="counter" id="f-kw-count">0</small></span>
+                <textarea id="f-kw-list" rows="3" placeholder="uma por linha&#10;ex.: ping&#10;vaga aberta" spellcheck="false"></textarea>
+                <small>Maiúsculas, acentos e espaços extras são ignorados.</small>
+              </label>
+              <div class="switch-row">
+                <span class="key">Tocar</span>
+                <div class="segmented" role="radiogroup">
+                  <label><input type="radio" name="f-kw-sound" value="ding" /><span>Som</span></label>
+                  <label><input type="radio" name="f-kw-sound" value="alarm" /><span>Alarme</span></label>
+                </div>
+              </div>
             </div>
           </div>
         </div>

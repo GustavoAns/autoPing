@@ -145,6 +145,37 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 }
 .section:first-child { border-top: 0; padding-top: 0; }
 
+/* ── Opções colapsáveis ───────────────────────────── */
+.opt {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+}
+.opt-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 4px; }
+.opt-title {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 6px;
+  padding: 2px 4px; border-radius: 6px; text-align: left;
+}
+.opt-title:hover .key { color: var(--text); }
+.opt-sum {
+  margin-left: auto; padding-left: 6px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chev {
+  width: 14px; height: 14px; flex: none;
+  display: grid; place-items: center;
+  transition: transform .15s;
+}
+.chev::before {
+  content: ""; width: 5px; height: 5px; margin-left: -2px;
+  border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+  transform: rotate(-45deg);
+}
+.opt.open .chev { transform: rotate(90deg); }
+.opt-body { display: none; flex-direction: column; gap: 10px; padding: 0 12px 12px 28px; }
+.opt.open .opt-body { display: flex; }
+
 /* Seletor Som | Alarme */
 .segmented {
   display: inline-flex; padding: 2px; gap: 2px;
