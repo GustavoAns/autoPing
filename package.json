@@ -1,27 +1,15 @@
 {
   "name": "autoping",
-  "version": "2.0.0",
-  "description": "Discord AutoPing - Responde automaticamente a novos tÃ³picos",
-  "main": "src/index.js",
+  "version": "3.0.0",
+  "private": true,
+  "description": "AutoPing Desktop - responde automaticamente a novos tópicos do Discord",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "list-channels": "node src/utils/listChannels.js",
-    "test": "node --test"
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "test": "cargo test --manifest-path src-tauri/Cargo.toml --lib"
   },
-  "keywords": [
-    "discord",
-    "autoresponder",
-    "thread"
-  ],
-  "author": "",
-  "license": "ISC",
-  "engines": {
-    "node": ">=22"
-  },
-  "dependencies": {
-    "dotenv": "^17.3.1",
-    "undici": "^7.16.0",
-    "ws": "^8.18.3"
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4"
   }
 }

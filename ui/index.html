@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AutoPing</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- ═══════════════ TELA PRINCIPAL ═══════════════ -->
+    <section id="view-main" class="view" hidden>
+      <header class="bar" data-tauri-drag-region>
+        <div class="status" id="status" data-tauri-drag-region>
+          <span class="dot"></span><span class="label" id="status-label">—</span>
+        </div>
+        <div class="actions">
+          <button class="icon" id="btn-settings" title="Configurações" aria-label="Configurações">
+            <svg viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1Z"/></svg>
+          </button>
+          <button class="icon" data-hide title="Ocultar" aria-label="Ocultar">
+            <svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="body">
+        <div class="row">
+          <span class="key">Canal</span>
+          <span class="val" id="m-channel">—</span>
+        </div>
+        <div class="row">
+          <span class="key">Mensagem</span>
+          <span class="val mono" id="m-message">—</span>
+        </div>
+        <div class="chips">
+          <span class="chip" id="m-human">Modo humano</span>
+          <span class="chip" id="m-sleep">Sleep</span>
+          <span class="chip" id="m-sound">Som</span>
+        </div>
+      </div>
+
+      <footer class="foot">
+        <span class="hint" id="m-hint">—</span>
+        <button class="btn" id="btn-toggle">—</button>
+      </footer>
+    </section>
+
+    <!-- ═══════════════ CONFIGURAÇÕES ═══════════════ -->
+    <section id="view-config" class="view" hidden>
+      <header class="bar" data-tauri-drag-region>
+        <div class="title" data-tauri-drag-region>
+          <button class="icon" id="btn-back" title="Voltar" aria-label="Voltar">
+            <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+          <span data-tauri-drag-region>Configurações</span>
+        </div>
+        <div class="actions">
+          <button class="icon" data-hide title="Ocultar" aria-label="Ocultar">
+            <svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <form class="body form" id="form" autocomplete="off">
+        <label class="field">
+          <span class="key">Token</span>
+          <input type="password" id="f-token" spellcheck="false" />
+          <small id="f-token-hint">Salvo no Cofre do Windows.</small>
+        </label>
+
+        <label class="field">
+          <span class="key">Canal <button type="button" class="link" id="btn-refresh">atualizar lista</button></span>
+          <select id="f-channel-select"></select>
+          <input type="text" id="f-channel" inputmode="numeric" placeholder="ID do canal" spellcheck="false" />
+        </label>
+
+        <label class="field">
+          <span class="key">Mensagem <small class="counter" id="f-count">0/2000</small></span>
+          <textarea id="f-message" rows="2" maxlength="2000"></textarea>
+        </label>
+
+        <label class="field">
+          <span class="key">Aguardar 1ª msg do criador (ms)</span>
+          <input type="number" id="f-wait" min="500" step="100" />
+        </label>
+
+        <div class="switch-row">
+          <div>
+            <span class="key">Modo humano</span>
+            <small>Espera extra após a msg do criador</small>
+          </div>
+          <div class="inline">
+            <input type="number" id="f-delay" min="0" max="60000" step="50" class="small" />
+            <span class="unit">ms</span>
+            <input type="checkbox" class="switch" id="f-human" />
+          </div>
+        </div>
+
+        <div class="switch-row">
+          <div>
+            <span class="key">Sleep após responder</span>
+            <small>Desliga sozinho até você ligar de novo</small>
+          </div>
+          <input type="checkbox" class="switch" id="f-sleep" />
+        </div>
+
+        <div class="switch-row">
+          <div>
+            <span class="key">Som ao enviar <button type="button" class="link" data-test="ding">testar</button></span>
+            <small>Aviso curto quando a mensagem sai</small>
+          </div>
+          <input type="checkbox" class="switch" id="f-sound" />
+        </div>
+
+        <div class="switch-row">
+          <div>
+            <span class="key">Modo alarme <button type="button" class="link" data-test="alarm">testar</button></span>
+            <small>Toca sem parar até você desligar</small>
+          </div>
+          <input type="checkbox" class="switch alarm" id="f-alarm" />
+        </div>
+
+        <p class="error" id="f-error" hidden></p>
+      </form>
+
+      <footer class="foot">
+        <button class="btn ghost" id="btn-cancel" type="button">Cancelar</button>
+        <button class="btn primary" id="btn-save" type="submit" form="form">Salvar</button>
+      </footer>
+    </section>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

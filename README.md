@@ -1,341 +1,86 @@
-# 🤖 Discord AutoPing
+# 🟢 AutoPing
 
-Ferramenta que monitora um canal do Discord e responde automaticamente quando um novo tópico (thread) é criado.
+App leve para Windows que monitora um canal do Discord e responde automaticamente quando um novo tópico é criado, sempre logo após a primeira mensagem do criador.
 
-> ⚠️ **AVISO**: O uso de self-bots viola os Termos de Serviço do Discord e pode resultar em banimento da sua conta. Use por sua conta e risco, porem a maior parte dos banimentos é devido span.
-
----
-
-## 📋 Funcionalidades
-
-- ✅ Monitora um canal específico por novos tópicos
-- ✅ Envia mensagem automaticamente quando um tópico é criado
-- ✅ Resposta ultra-rápida (milissegundos)
-- ✅ Dockerizado para fácil distribuição
-- ✅ Utilitário para listar IDs de canais
+> ⚠️ **AVISO**: o AutoPing usa a sua conta de usuário (self-bot), o que viola os Termos de Serviço do Discord e pode resultar em banimento. Use por sua conta e risco.
 
 ---
 
-## 🚀 Instalação Rápida
+## ✨ Funcionalidades
 
-### Opção 1: Com Docker (Recomendado para iniciantes)
-
-**Pré-requisito:** Instale o [Docker Desktop](https://www.docker.com/products/docker-desktop/) (baixe, instale e abra o programa)
-
-#### Passo a passo no Windows:
-
-**1. Baixe o projeto** - Extraia a pasta do projeto para um local fácil, por exemplo: `C:\autoPing`
-
-**2. Configure o arquivo `.env`:**
-   - Abra a pasta do projeto
-   - Crie um arquivo chamado `.env` (pode copiar do `.env.example`)
-   - Abra com o Bloco de Notas e preencha:
-   ```
-   DISCORD_TOKEN=seu_token_aqui
-   CHANNEL_ID=123456789012345678
-   AUTO_MESSAGE=222/555/666-FB/666-Rep
-   ```
-   - Salve o arquivo
-
-**3. Abra o CMD na pasta do projeto:**
-   - Abra o Explorador de Arquivos e vá até a pasta do projeto
-   - Clique na barra de endereço, digite `cmd` e pressione Enter
-   - Ou: Abra o CMD e digite: `cd C:\autoPing` (substitua pelo seu caminho)
-
-**4. Execute o comando para iniciar:**
-```cmd
-docker-compose up -d --build
-```
-
-**5. Pronto!** O bot está rodando. Para ver os logs:
-```cmd
-docker-compose logs -f
-```
-
-#### Comandos úteis (copie e cole no CMD):
-
-| O que você quer fazer | Comando |
-|----------------------|---------|
-| Iniciar o bot | `docker-compose up -d` |
-| Parar o bot | `docker-compose down` |
-| Ver logs (o que está acontecendo) | `docker-compose logs -f` |
-| Reiniciar após alterar o .env | `docker-compose restart` |
-| Atualizar após mudar o código | `docker-compose up -d --build` |
-
-> 💡 **Dica:** Pressione `Ctrl+C` para sair da visualização de logs
+- Resposta automática em novos tópicos do canal escolhido, **depois** da mensagem inicial do criador
+- **Modo humano**: espera extra configurável após a mensagem do criador
+- **Sleep após responder**: desliga sozinho depois de pegar uma vaga
+- **Som ao enviar** e **modo alarme** (toca até você parar)
+- Ícone na bandeja que muda de cor: 🟢 ligado · 🔴 desligado · 🔵 sleep (pisca 🟠 com alarme)
+- Configurações aplicadas na hora, sem reiniciar
+- Muito leve: oculto na bandeja usa ~12MB de RAM e CPU praticamente zero
+- Token guardado no **Cofre do Windows** (criptografado)
 
 ---
 
-### Opção 2: Sem Docker
+## 🚀 Instalação
 
-**Requisitos:** Node.js 22 ou superior (recomendado 24 LTS)
+1. Baixe e execute `AutoPing_x.y.z_x64-setup.exe`.
+2. Na primeira abertura, a tela de configurações aparece:
+   - **Token**: o token da sua conta (veja abaixo)
+   - **Canal**: escolha na lista ou cole o ID
+   - **Mensagem**: o texto que será enviado
+3. Clique em **Salvar**. Pronto: o AutoPing fica na bandeja (perto do relógio).
+
+> Já usava a versão de console? Se houver um `.env` na pasta, o app importa token, canal e mensagem automaticamente na primeira execução.
+
+### Obter o token
+
+1. Abra o Discord **no navegador** e pressione `F12`.
+2. Pressione `Ctrl+Shift+M` (modo de emulação mobile).
+3. Aba **Application** → **Local Storage** → `https://discord.com` → copie o valor de `token` (sem aspas).
+
+**Nunca compartilhe seu token.**
+
+---
+
+## 🖱️ Uso
+
+| Ação | Como |
+|---|---|
+| Abrir / ocultar | Clique no ícone da bandeja |
+| Ligar / desligar | Botão na janela ou menu da bandeja |
+| Acordar do sleep | Botão **Acordar** (azul) |
+| Parar alarme | Botão **Parar alarme**, clique no ícone ou menu da bandeja |
+| Configurações | Engrenagem ⚙ na janela |
+| Sair | Menu da bandeja → **Sair** |
+
+### Configurações
+
+| Opção | Descrição |
+|---|---|
+| Token | Salvo no Cofre do Windows; deixe vazio para manter |
+| Canal | Canal (texto, fórum, mídia ou anúncios) onde os tópicos são criados |
+| Mensagem | Texto enviado (até 2000 caracteres) |
+| Aguardar 1ª msg do criador | Tempo máximo esperando a mensagem do criador; depois envia mesmo assim |
+| Modo humano | Espera extra (ms) após a mensagem do criador. Desligado = mais rápido |
+| Sleep após responder | Depois de responder, desliga até você acordar |
+| Som ao enviar | Toca um aviso curto |
+| Modo alarme | Toca sem parar até você desligar |
+
+---
+
+## 🛠️ Desenvolvimento
+
+Requisitos: Windows, [Rust](https://rustup.rs) (MSVC), VS 2022 Build Tools (C++), Node.js 22+.
 
 ```bash
-# 1. Instalar dependências
 npm install
-
-# 2. Configurar .env (veja seção abaixo)
-
-# 3. Executar
-npm start
+npm run dev     # app em modo desenvolvimento
+npm test        # testes do core (Rust)
+npm run build   # gera o .exe e o instalador em src-tauri/target/release/
 ```
 
----
-
-## ⚙️ Configuração
-
-### 1. Obter Token do Discord
-
-O token é necessário para autenticar sua conta. **NUNCA compartilhe seu token!**
-
-**Método (atualizado 2025):**
-1. Abra o Discord **no navegador** (não funciona no app desktop)
-2. Pressione `F12` para abrir DevTools
-3. Pressione `Ctrl+Shift+M` para ativar o **modo de emulação mobile** (obrigatório)
-4. Vá na aba "Console"
-5. Cole e execute:
-
-```javascript
-const iframe = document.createElement('iframe');
-document.body.appendChild(iframe);
-const token = JSON.parse(iframe.contentWindow.localStorage.token);
-console.log('Token:', token);
-iframe.remove();
-```
-
-6. Copie o token exibido no console
-
-**Método alternativo (sem código):**
-1. Abra o Discord no navegador e pressione `F12`
-2. Pressione `Ctrl+Shift+M` para ativar emulação mobile
-3. Vá na aba `Application` > `Local Storage` > `https://discord.com`
-4. Procure a chave `token` e copie o valor (sem as aspas)
-
-### 2. Obter ID do Canal
-
-**Método Manual:**
-1. Vá em `Configurações do Discord > Avançado`
-2. Ative `Modo de Desenvolvedor`
-3. Clique com botão direito no canal desejado
-4. Clique em `Copiar ID`
-
-**Método Automático (este projeto):**
-```bash
-# Configure apenas o DISCORD_TOKEN primeiro, depois execute:
-npm run list-channels
-```
-
-Isso listará todos os servidores e canais com seus IDs.
-
-### 3. Configurar arquivo .env
-
-Copie `.env.example` para `.env` e preencha:
-
-```env
-# Seu token do Discord
-DISCORD_TOKEN=seu_token_aqui
-
-# ID do canal a ser monitorado
-CHANNEL_ID=123456789012345678
-
-# Mensagem a ser enviada
-AUTO_MESSAGE=222/555/666-FB/666-Rep
-
-# A resposta sai logo após a 1ª mensagem do criador do tópico.
-# Tempo máximo aguardando essa mensagem (em ms). Padrão: 5000
-WAIT_FOR_MESSAGE=5000
-
-# Delay humanizado após a 1ª mensagem do criador (em ms). Padrão: 900 | 0 = mais rápido
-HUMANIZED_DELAY=900
-
-# Desligar após responder (volta com !autoPing on). Padrão: false
-SLEEP_AFTER_REPLY=false
-```
-
----
-
-## 📁 Estrutura do Projeto
-
-```
-autoPing/
-├── src/
-│   ├── index.js              # Inicialização e integração dos módulos
-│   ├── config.js             # Configuração (.env + runtime)
-│   ├── commands.js           # Comandos !autoPing
-│   ├── core/
-│   │   ├── responder.js      # Decide quando enviar a mensagem
-│   │   └── humanized.js      # Modo humanizado (aguardar 1ª mensagem)
-│   ├── discord/
-│   │   ├── gateway.js        # Conexão WebSocket com o Discord
-│   │   ├── rest.js           # Envio HTTP ultra-rápido
-│   │   ├── cache.js          # Servidores e canais
-│   │   └── properties.js     # Identificação do cliente
-│   └── utils/
-│       └── listChannels.js   # Utilitário para listar canais
-├── test/                     # Testes (npm test)
-├── .env                      # Configurações (não commitado)
-├── .env.example              # Exemplo de configurações
-├── .gitignore
-├── .dockerignore
-├── Dockerfile
-├── docker-compose.yml
-├── package.json
-└── README.md
-```
-
----
-
-## 🛠️ Comandos NPM
-
-| Comando | Descrição |
-|---------|-----------|
-| `npm start` | Inicia o AutoPing |
-| `npm run dev` | Inicia com auto-reload (desenvolvimento) |
-| `npm run list-channels` | Lista todos os canais e seus IDs |
-| `npm test` | Roda os testes automatizados |
-
----
-
-## 💬 Comandos do Bot (via Discord)
-
-Digite estes comandos em **qualquer chat do Discord** (serão deletados automaticamente):
-
-| Comando | Descrição |
-|---------|-----------|
-| `!autoPing status` | Mostra a configuração atual |
-| `!autoPing canal ID` | Define o canal a ser monitorado |
-| `!autoPing msg TEXTO` | Define a mensagem automática |
-| `!autoPing delay MS` | Tempo máx. aguardando a 1ª msg do criador |
-| `!autoPing listar` | Lista todos os canais disponíveis |
-| `!autoPing on` | Ativa o AutoPing |
-| `!autoPing off` | Desativa o AutoPing (cancela tópicos aguardando resposta) |
-| `!autoPing sleep on` / `off` | Liga/desliga o sleep: após responder, desativa até `!autoPing on` |
-| `!autoPing ajuda` | Mostra todos os comandos |
-
-**Exemplos:**
-```
-!autoPing canal 123456789012345678
-!autoPing msg Olá! Tenho interesse em participar!
-!autoPing delay 5000
-```
-
-> ⚠️ As alterações via comandos são **temporárias**. Para torná-las permanentes, edite o arquivo `.env`.
-
----
-
-## 🐳 Referência Rápida Docker
-
-> **Lembre-se:** Todos os comandos devem ser executados na pasta do projeto (onde está o arquivo `docker-compose.yml`)
-
-```cmd
-REM Iniciar o bot
-docker-compose up -d
-
-REM Parar o bot
-docker-compose down
-
-REM Ver logs em tempo real (Ctrl+C para sair)
-docker-compose logs -f
-
-REM Reiniciar (usar após alterar .env)
-docker-compose restart
-
-REM Reconstruir (usar após alterar código)
-docker-compose up -d --build
-
-REM Ver se o container está rodando
-docker ps
-```
-
----
-
-## 👥 Múltiplas Contas (Instâncias)
-
-Para rodar o bot em **várias contas simultaneamente**:
-
-### Estrutura de Pastas
-
-```
-autoPing/
-├── instances/
-│   ├── conta1/
-│   │   └── .env     ← Configuração da conta 1
-│   ├── conta2/
-│   │   └── .env     ← Configuração da conta 2
-│   └── conta3/
-│       └── .env     ← Configuração da conta 3
-└── docker-compose.multi.yml
-```
-
-### Configuração
-
-1. **Crie uma pasta para cada conta** em `instances/`:
-   ```cmd
-   mkdir instances\conta1
-   mkdir instances\conta2
-   ```
-
-2. **Copie e configure o `.env`** para cada conta:
-   ```cmd
-   copy .env.example instances\conta1\.env
-   copy .env.example instances\conta2\.env
-   ```
-
-3. **Edite cada `.env`** com o token e configurações específicas de cada conta.
-
-4. **Descomente os serviços** no arquivo `docker-compose.multi.yml` para cada conta que deseja usar.
-
-### Comandos para Múltiplas Instâncias
-
-```cmd
-REM Iniciar todas as contas
-docker-compose -f docker-compose.multi.yml up -d --build
-
-REM Ver logs de todas as contas
-docker-compose -f docker-compose.multi.yml logs -f
-
-REM Ver logs de uma conta específica
-docker-compose -f docker-compose.multi.yml logs -f conta1
-
-REM Parar todas as contas
-docker-compose -f docker-compose.multi.yml down
-
-REM Reiniciar uma conta específica
-docker-compose -f docker-compose.multi.yml restart conta1
-```
-
-> 💡 **Dica:** Use o arquivo `.env` da raiz para uma conta única, ou `instances/` para múltiplas contas.
-
----
-
-## 🔧 Compartilhar com Outras Pessoas
-
-Para distribuir este projeto:
-
-1. **Compartilhe os arquivos** (sem o `.env` e `node_modules`)
-2. A pessoa deve:
-   - Ter Docker instalado
-   - Criar seu próprio `.env` com seu token
-   - Executar `docker-compose up -d`
-
----
-
-## ❓ Solução de Problemas
-
-### "Token inválido"
-- Verifique se copiou o token corretamente (com as aspas removidas)
-- Gere um novo token se necessário
-
-### "Canal não encontrado"
-- Use `npm run list-channels` para verificar o ID correto
-- Certifique-se de que sua conta tem acesso ao canal
-
-### "Mensagem não enviada"
-- Verifique se você tem permissão para enviar mensagens no canal
-- Confira os logs para mensagens de erro específicas
+Arquivos do app: `%APPDATA%\com.autoping.desktop\` (`config.json` e `logs/`).
 
 ---
 
 ## 📜 Licença
 
-Este projeto é para uso pessoal e educacional. Use com responsabilidade.
+Uso pessoal e educacional. Use com responsabilidade.

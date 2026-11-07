@@ -1,14 +1,17 @@
 # Dependências
 node_modules/
 
-# Variáveis de ambiente (NUNCA COMMITAR!)
+# Configuração local da versão antiga (importada pelo app; NUNCA commitar)
 .env
-instances/*/.env
+.env.*
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/
 
 # Logs
 logs/
 *.log
-npm-debug.log*
 
 # Sistema
 .DS_Store
@@ -19,7 +22,3 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
-
-# Build
-dist/
-build/

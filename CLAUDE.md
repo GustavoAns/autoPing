@@ -1,142 +1,113 @@
-# CLAUDE.md — Discord AutoPing
+# CLAUDE.md — AutoPing Desktop
 
 Guia de contexto para desenvolvimento neste repositório.
 
 ## Visão geral
 
-Self-bot do Discord (roda na **conta de usuário**, via token pessoal) que monitora **um canal** e, quando um **novo tópico (thread)** é criado nele, envia automaticamente uma mensagem pré-definida dentro do tópico.
+App desktop Windows (Tauri v2 + Rust) que roda na **conta de usuário** do Discord (self-bot, via token pessoal), monitora **um canal** e, quando um **novo tópico (thread)** é criado nele, envia automaticamente uma mensagem pré-definida dentro do tópico. Fica na bandeja do Windows; janela pequena e ocultável.
 
 ### Regra de negócio central
 
-- Tópicos no canal monitorado representam **vagas/oportunidades**. **Quem responde primeiro fica com a vaga.**
-- Portanto **latência é a métrica nº 1**. Toda decisão de arquitetura existe para reduzir o tempo entre o evento `THREAD_CREATE` e o `POST` da mensagem.
-- A mensagem enviada (ex.: `222/555/666-FB/666-Rep`) é o "claim" do usuário na vaga.
-- **A resposta SEMPRE deve aparecer depois da 1ª mensagem do criador.** Ao criar um tópico, o usuário já define a mensagem inicial; o Discord cria o tópico (THREAD_CREATE) e só depois posta essa mensagem (MESSAGE_CREATE). Responder no THREAD_CREATE faz nossa msg aparecer ANTES da do criador — suspeito, proibido. **Não existe modo imediato.**
-- Gatilho de envio = MESSAGE_CREATE do criador (`author.id === owner_id`) dentro do tópico. A ordem é garantida pelo snowflake (nosso ID é sempre maior), então `HUMANIZED_DELAY` não é necessário para a ordem; padrão 900ms por aparência humana (0 = mais rápido).
-- Lógica isolada em `src/core/humanized.js` (será retrabalhada / exposta na UI).
+- Tópicos no canal monitorado representam **vagas/oportunidades**. **Quem responde primeiro fica com a vaga.** → **latência é a métrica nº 1**.
+- **A resposta SEMPRE aparece depois da 1ª mensagem do criador.** Ao criar um tópico, o usuário já define a mensagem inicial; o Discord emite THREAD_CREATE e só depois MESSAGE_CREATE dessa mensagem. Responder no THREAD_CREATE faria nossa msg aparecer ANTES — suspeito, proibido. **Não existe modo imediato.**
+- Gatilho de envio = MESSAGE_CREATE do criador (`author.id == owner_id`) dentro do tópico. A ordem é garantida pelo snowflake (nosso ID é sempre maior).
+- Sem msg do criador em `waitForMessageMs` → envia mesmo assim (ex.: tópico criado a partir de mensagem existente).
+- **Modo humano**: espera `humanizedDelayMs` após a msg do criador (só aparência; 0 = mais rápido).
+- **Status**: `on` (verde, responde) / `off` (vermelho, manual) / `sleep` (azul, entra sozinho após responder se `sleepAfterReply`). Off/Sleep bloqueiam envio e cancelam pendentes. Sleep volta com "Acordar".
+- **Som/alarme**: após enviar, "ding" (`soundEnabled`) ou, com `alarmEnabled`, alarme em loop até o usuário parar (o usuário precisa agir de verdade após conseguir a vaga e pode estar longe do PC).
+- App roda **enquanto o usuário joga** → **leveza** é requisito: janela oculta = WebView destruída (~12MB, 1 processo, CPU ~0).
 
-> ⚠️ Self-bots violam os ToS do Discord (risco de ban da conta). O token dá acesso total à conta — nunca logar, commitar ou enviar o token para terceiros. Não adicionar libs de selfbot de terceiros (risco de roubo de token).
+> ⚠️ Self-bots violam os ToS do Discord (risco de ban). O token dá acesso total à conta — nunca logar, commitar, exibir ou enviar a terceiros. Não adicionar libs de selfbot de terceiros (risco de roubo de token).
 
 ## Stack
 
-- Node.js **>= 22** (dev local: `nvm use 24.15.0`; Docker: `node:24-alpine`), CommonJS.
-- **Sem lib de Discord.** Cliente próprio:
-  - `ws` — gateway (WebSocket).
-  - `undici` — REST (Pool com conexões TLS persistentes).
-- `dotenv` — carrega `.env`.
-- Testes: `node:test` nativo (`npm test`). Sem linter, sem build.
-
-> Histórico: até a v1 usava `discord.js-selfbot-v13`, arquivada em 11/out/2025. Substituída pelo cliente próprio na v2. **Não** usar `selfbot.js-v14` (placeholder de segurança do npm / malware).
+- **Tauri v2** (Rust) + UI em **HTML/CSS/JS vanilla** (`ui/`, sem framework/bundler, `withGlobalTauri`). WebView2.
+- Core Rust: `tokio`, `tokio-tungstenite` (gateway), `reqwest` 0.12 (REST, pool keep-alive), `serde_json` (`raw_value`), `keyring` 3 (Cofre do Windows), `windows-sys` (PlaySound), `tauri-plugin-single-instance`.
+- **Sem biblioteca de Discord**: cliente próprio (a antiga `discord.js-selfbot-v13` foi arquivada em out/2025; `selfbot.js-v14` é malware/placeholder do npm).
+- Toolchain: Rust stable MSVC (`%USERPROFILE%\.cargo\bin`), VS 2022 Build Tools (C++), Node só para o CLI do Tauri (`@tauri-apps/cli`).
 
 ## Estrutura
 
 ```
-src/index.js               # Wiring: config ↔ gateway ↔ responder ↔ humanized ↔ commands; status; shutdown
-src/config.js              # Config (EventEmitter, evento 'change'), loadToken, validateMessage, THREAD_PARENT_TYPES
-src/commands.js            # Comandos !autoPing, validateChannel (REST), formatChannelList
-src/core/responder.js      # Decide quando enviar; dedupe; checa `enabled` antes de todo envio
-src/core/humanized.js      # HumanizedWaiter: pending/scheduled/buffer de msgs adiantadas
-src/discord/gateway.js     # Gateway de usuário: heartbeat, identify, resume, reconnect, op 37
-src/discord/rest.js        # undici Pool: sendMessage (retry 429), getChannel, deleteMessage, warmup
-src/discord/cache.js       # Guilds/canais vindos do gateway (para listar e nomes)
-src/discord/properties.js  # Fingerprint: properties do IDENTIFY = User-Agent/X-Super-Properties do REST
-src/utils/listChannels.js  # Script: conecta, lista canais com IDs, sai
-test/                      # node:test (humanized + responder)
-docker-compose.yml         # 1 conta (.env da raiz)
-docker-compose.multi.yml   # N contas (instances/<conta>/.env)
+src-tauri/
+  src/lib.rs              # setup Tauri, comandos IPC, single-instance, run loop (não sai ao fechar janela)
+  src/main.rs             # entry (windows_subsystem em release)
+  src/engine.rs           # orquestra Bot+Gateway+REST+Cache; config ao vivo; snapshot p/ UI; migração .env
+  src/config.rs           # Config/ConfigPatch/Status + persistência JSON + validações
+  src/secrets.rs          # token no Cofre do Windows (keyring)
+  src/audio.rs            # ding/alarme gerados em código (WAV) + PlaySound
+  src/logger.rs           # log em arquivo com rotação (logf!)
+  src/tray.rs             # ícone colorido por status, pisca laranja no alarme, menu
+  src/window.rs           # janela sem borda, sempre por cima, canto inferior direito; ocultar = destroy
+  src/core/humanized.rs   # estado puro: pendentes + buffer de msgs adiantadas (TTL 15s)
+  src/core/bot.rs         # regras de envio, timers, status/sleep, dedupe; trait Sender (mock nos testes)
+  src/discord/gateway.rs  # gateway de usuário: heartbeat, identify, resume, op 7/9, backoff, op 37; parse preguiçoso
+  src/discord/rest.rs     # send_message (nonce, retry 1x em 429), get_channel, ping; SharedRest (troca ao vivo)
+  src/discord/cache.rs    # guilds/canais (READY/GUILD_*/CHANNEL_*) p/ lista de canais
+  src/discord/properties.rs # fingerprint único: IDENTIFY = User-Agent/X-Super-Properties
+  tauri.conf.json, capabilities/default.json, icons/, app-icon.png (fonte dos ícones)
+ui/index.html, style.css, app.js   # tela principal + configurações
 ```
 
-## Comandos de desenvolvimento
+## Comandos
 
 ```bash
-nvm use 24.15.0
 npm install
-npm test                 # testes unitários (sem token)
-npm start                # node src/index.js
-npm run dev              # node --watch
-npm run list-channels    # lista canais e IDs (precisa só do DISCORD_TOKEN)
-
-docker-compose up -d --build
-docker-compose -f docker-compose.multi.yml up -d --build
+npm run dev        # tauri dev (hot reload: Rust recompila sozinho, UI recarrega)
+npm test           # cargo test --lib (core: config, humanized, bot, cache, audio)
+npm run build      # release: src-tauri/target/release/autoping.exe + bundle/nsis/*-setup.exe
 ```
+No PowerShell, se `cargo` não for achado: `$env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"`.
 
-## Configuração (`.env`)
+## Dados do usuário
 
-| Variável | Obrigatória | Default | Uso |
-|---|---|---|---|
-| `DISCORD_TOKEN` | sim | — | Token da conta. Processo aborta se vazio ou contiver `seu_token`. |
-| `CHANNEL_ID` | não* | `''` | Canal pai monitorado (texto 0, anúncio 5, fórum 15, mídia 16). |
-| `AUTO_MESSAGE` | não* | `''` | Mensagem enviada. Sem ela, nada é enviado. |
-| `WAIT_FOR_MESSAGE` | não | `5000` | ms máx. aguardando 1ª msg do criador; depois envia mesmo assim (ex.: tópico criado a partir de msg existente). `0`/vazio = 5000. |
-| `HUMANIZED_DELAY` | não | `900` | Delay humanizado após a 1ª msg do criador. `0` = envio síncrono, mais rápido. |
-| `SLEEP_AFTER_REPLY` | não | `false` | Após responder, desliga (`enabled=false`, cancela pendentes) até `!autoPing on`. |
-| `CLIENT_BUILD_NUMBER` | não | ver `properties.js` | Build number do cliente web no fingerprint. |
-
-\* Podem ser definidos em runtime via comando, mas nada é enviado sem eles.
-
-Alterações via comando são **em memória** — perdidas ao reiniciar.
+- Config: `%APPDATA%\com.autoping.desktop\config.json` (camelCase: `channelId`, `autoMessage`, `waitForMessageMs`, `humanizedEnabled`, `humanizedDelayMs`, `sleepAfterReply`, `soundEnabled`, `alarmEnabled`, `status`). **Sem token.**
+- Token: Cofre do Windows (Credential Manager), serviço `AutoPing`, usuário `discord-token`.
+- Log: `%APPDATA%\com.autoping.desktop\logs\autoping.log` (rotação 1MB). Nunca com token.
+- Migração: se o cofre estiver vazio, `Engine::initial_token` importa `DISCORD_TOKEN`/`CHANNEL_ID`/`AUTO_MESSAGE` de um `.env` (pasta atual, pai ou do .exe).
 
 ## Arquitetura
 
-### Fluxo de eventos
-`gateway 'dispatch' (t, d)` → **`responder.handleDispatch` primeiro (caminho quente)** → `cache.handleDispatch` → `commands.handleMessage` (MESSAGE_CREATE).
+### Fluxo
+`gateway` (task tokio) → frame `{op,s,t,d: RawValue}` → `GatewayEvents::on_dispatch` → **MESSAGE_CREATE/THREAD_CREATE primeiro** (caminho quente → `Bot`) → READY/GUILD_*/CHANNEL_* (cache). Demais eventos descartados sem desserializar `d`.
 
 ### Caminho quente
-`THREAD_CREATE` (`newly_created`, `parent_id === channelId`) → registra pendente. `MESSAGE_CREATE` do criador no tópico → `humanized` → `responder.send()` → `rest.sendMessage()` (POST `/api/v9/channels/{threadId}/messages`), síncrono quando `HUMANIZED_DELAY=0`. Logs/eventos só depois de disparar o envio.
-- Pool undici com 10 conexões keep-alive; `warmup()` no READY + ping a cada 30s.
-- Body sempre consumido (`dump()`/`json()`) para devolver a conexão ao pool.
-- 429 → espera `retry_after` e tenta **1x**.
+THREAD_CREATE (`newly_created`, `parent_id == channelId`, status On) → `Humanized` pendente + timer timeout. MESSAGE_CREATE do criador → cancela timeout → `schedule_send` (delay 0 = `tokio::spawn` direto) → `Bot::send` checa status On + dedupe → `SharedRest` → POST `/api/v9/channels/{id}/messages`. Logs/eventos/som só depois do POST. Prazos dos timers calculados no momento do evento (`sleep_until`).
 
-### `HumanizedWaiter` (único modo de envio)
-- `onThreadCreate`: se o criador já postou no tópico (buffer `recent`, TTL 15s — msg pode chegar antes do THREAD_CREATE) → envia. Senão → `pending` com timeout `waitForMessage`.
-- `onMessageCreate`: tópico pendente + autor = criador → cancela timeout, envia (após `humanizedDelay`, se > 0). Tópico desconhecido → grava no buffer.
-- Timeout → envia **sem** `humanizedDelay` (comportamento mantido; candidato a retrabalho).
-- `cancelAll()` → chamado quando `enabled` vira `false` ou o canal muda.
-- Emite `pending`, `owner-message`, `timeout`, `cancelled` (para logs e futura UI).
-- Não conhece gateway/REST: recebe `send` injetado. Testável com fake timers.
+### Bot (`core/bot.rs`)
+- Estado em `Mutex<Inner>` (config, humanized, timers `AbortHandle`, processed). Notificações (`BotEvent`) sempre fora do lock.
+- Sleep: ao disparar envio com `sleep_after_reply`, status → Sleep + `cancel_all` antes do await; falha no envio → volta On.
+- Dedupe 30s por thread.
 
-### Garantias do `off`
-1. `config.set('enabled', false)` → listener em `index.js` chama `humanized.cancelAll()`.
-2. `responder.send()` checa `config.enabled` imediatamente antes de qualquer POST.
+### Engine (`engine.rs`)
+- `Arc::new_cyclic` (Bot notifica Engine via `Weak`).
+- `update_config(patch)`: valida; canal novo → `GET /channels/:id` (tipo 0/5/15/16) → cancela pendentes + op 37 subscribe; aplica ao vivo; persiste. Token → `set_token` → cofre + reconecta.
+- `snapshot()` → UI (`state-changed`) e tray a cada mudança.
+- Keep-warm: ping REST a cada 30s.
 
-### Sleep após responder
-`responder.send()` dispara o POST e, se `sleepAfterReply`, chama `config.set('enabled', false)` logo em seguida (cancela pendentes e bloqueia envios concorrentes). Envio falhou → religa. Comando `!autoPing sleep on|off`.
-
-### Dedupe
-`processed: Set` no responder; entrada removida após 30s ou em falha de envio.
-
-### Gateway (`discord/gateway.js`)
-- `wss://gateway.discord.gg/?v=9&encoding=json`, sem compressão, IDENTIFY de usuário (sem intents, `capabilities` 30717).
-- Heartbeat com jitter; sem ACK → `terminate()` e RESUME.
-- op 7 → reconecta com RESUME (close 4000). op 9 → nova sessão se `d=false`, espera 1–5s.
-- Close fatais (4004, 4010–4014) → evento `fatal` → processo encerra. 4007/4009 → sessão nova.
-- Backoff exponencial até 30s.
-- `subscribeChannel(guildId, channelId)` envia op 37 (`threads: true`) — necessário para receber eventos em servidores grandes. Chamado no READY e ao trocar canal.
-
-### Comandos (`!autoPing ...`)
-Só da própria conta, em qualquer chat. Todos respondem **no chat e no terminal**. Mensagem do comando apagada após 2s.
-`status`, `canal <ID>`, `msg <texto>`, `delay <ms>`, `on`, `off`, `sleep on|off`, `listar`, `ajuda`.
-
-### Validação de canal
-`GET /channels/:id` (REST). OK + tipo em `THREAD_PARENT_TYPES` = válido. Não há checagem de permissão computada (falha de envio é logada). Erros: 10003/404, 50001/403.
+### UI / janela / bandeja
+- Janela 340×196 (principal) / 660 (config), sem borda, transparente, sempre por cima, sem taskbar. **Ocultar/fechar = `destroy()`** (libera WebView2). Sair só pelo menu da bandeja (`RunEvent::ExitRequested` com `code: None` é bloqueado).
+- 1º uso (sem token/canal) abre a config; configurado inicia só na bandeja.
+- Tray: verde/vermelho/azul; anel vazado = sem conexão; pisca laranja com alarme; clique esquerdo abre/oculta (ou para o alarme).
+- Comandos IPC: `get_snapshot`, `update_config`, `set_token`, `set_status`, `list_channels`, `stop_alarm`, `test_sound`, `hide_window`, `resize_window`.
 
 ## Convenções
 
-- Código, comentários, logs e mensagens em **PT-BR**, com emojis nos logs.
-- No caminho quente: **enviar primeiro, logar depois**. Nada de `await`, fetch ou validação antes do POST.
-- `properties.js` é a única fonte do fingerprint; IDENTIFY e REST devem continuar consistentes.
-- Mudanças de config sempre via `config.set()` (para disparar `change`).
-- Nunca logar o token.
+- Código, comentários, logs e UI em **PT-BR**.
+- Caminho quente: **enviar primeiro, logar depois**; nada de I/O/await antes do POST.
+- Toda mudança de config passa por `Engine::update_config` / `Bot::update_config` (aplica ao vivo, persiste, emite).
+- `properties.rs` é a única fonte do fingerprint.
+- Testes de timer com `#[tokio::test(start_paused = true)]`.
+- Nunca logar/exibir o token; ao inspecionar `.env`, filtrar a linha do token.
 
 ## Pendências / riscos
 
-- Fingerprint (`client_build_number`, versão do Chrome) fica desatualizado com o tempo — atualizar periodicamente.
-- Payload de READY de usuário varia com `capabilities`; `cache.js` faz parse defensivo (`guild.properties.name` / `guild.name`). Validar ao mudar capabilities.
-- op 37 e recebimento de eventos em servidores grandes: validar em uso real.
-- Config volátil; multi-conta = multi-container.
-- Dockerfile não testado localmente (Docker não instalado na máquina de dev).
+- Fingerprint (`CLIENT_BUILD_NUMBER`, versão do Chrome em `properties.rs`) envelhece — atualizar periodicamente.
+- Payload READY de usuário varia com `CAPABILITIES`; `cache.rs` faz parse defensivo.
+- op 37 em servidores grandes: validar quando trocar de servidor.
+- 1 conta por instância (single-instance).
 
-## Roadmap
+## Histórico
 
-- **Mini app (UI)** para configurar/controlar instâncias. Pontos de integração prontos: `Config` (evento `change`, `snapshot()`), eventos do `HumanizedWaiter`, callback `onSent` do responder. Manter o caminho de envio isolado e intocado em latência; considerar persistência da config.
-- Retrabalho do modo humanizado.
+- v1/v2: bot Node no console (+ Docker). v2 trocou `discord.js-selfbot-v13` por cliente próprio (`ws`+`undici`). Código Node removido na v3 (ver histórico git).
+- v3: app desktop Tauri/Rust.
