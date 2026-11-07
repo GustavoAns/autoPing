@@ -2,6 +2,9 @@
 name = "autoping"
 version = "3.0.0"
 description = "AutoPing - responde automaticamente a novos tópicos do Discord"
+authors = ["GustavoAns"]
+license = "MIT"
+repository = "https://github.com/GustavoAns/autoPing"
 edition = "2021"
 
 [lib]

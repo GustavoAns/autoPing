@@ -1,0 +1,49 @@
+name: Release
+
+# Cria uma release com o instalador ao enviar uma tag "v*" (ex.: v3.0.0).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Testes
+        run: npm test
+
+      - name: Build e release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: AutoPing ${{ github.ref_name }}
+          releaseBody: |
+            ## ⬇️ Instalação
+            Baixe **`AutoPing_*_x64-setup.exe`** abaixo e execute. Na primeira abertura, configure token, canal e mensagem.
+
+            > ⚠️ Self-bot: viola os Termos de Serviço do Discord. Use por sua conta e risco.
+          releaseDraft: false
+          prerelease: false

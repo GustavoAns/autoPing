@@ -59,6 +59,12 @@ npm run build      # release: src-tauri/target/release/autoping.exe + bundle/nsi
 ```
 No PowerShell, se `cargo` não for achado: `$env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"`.
 
+### Release / CI
+- `.github/workflows/ci.yml`: `cargo test --lib` em push no `master` e PRs (windows-latest).
+- `.github/workflows/release.yml`: tag `v*` → `tauri-action` compila e publica a release com o instalador NSIS. Antes da tag, atualizar `version` em `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` e `package.json`.
+- Screenshots do README (`docs/screenshots/`): gerados renderizando `ui/` no Edge headless com um mock de `window.__TAURI__` e dados fictícios (nunca usar prints reais com dados da conta).
+- Licença MIT.
+
 ## Dados do usuário
 
 - Config: `%APPDATA%\com.autoping.desktop\config.json` (camelCase: `channelId`, `autoMessage`, `waitForMessageMs`, `humanizedEnabled`, `humanizedDelayMs`, `sleepAfterReply`, `soundEnabled`, `alarmEnabled`, `status`). **Sem token.**
