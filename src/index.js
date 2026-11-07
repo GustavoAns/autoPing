@@ -1,785 +1,171 @@
 /**
  * Discord AutoPing
- * Monitora um canal específico e responde automaticamente quando um novo tópico é criado.
- * 
+ * Monitora um canal e responde automaticamente quando um novo tópico é criado.
+ * Quem responde primeiro fica com a vaga: latência é a métrica principal.
+ *
  * ⚠️ AVISO: O uso de self-bots viola os Termos de Serviço do Discord.
  * Use por sua conta e risco.
- * 
- * COMANDOS (envie via DM para você mesmo ou digite em qualquer chat):
- *   !autoPing status     - Mostra configuração atual
- *   !autoPing canal ID   - Altera o canal monitorado
- *   !autoPing msg TEXTO  - Altera a mensagem automática
- *   !autoPing listar     - Lista todos os canais disponíveis
- *   !autoPing ajuda      - Mostra todos os comandos
+ *
+ * Comandos: `!autoPing ajuda` (enviado pela própria conta, em qualquer chat).
  */
 
-require('dotenv').config();
-const { Client } = require('discord.js-selfbot-v13');
+const { Config, loadToken } = require('./config');
+const { createRest } = require('./discord/rest');
+const { Gateway } = require('./discord/gateway');
+const { Cache } = require('./discord/cache');
+const { HumanizedWaiter } = require('./core/humanized');
+const { createResponder } = require('./core/responder');
+const { createCommands, createChannelValidator, modeText } = require('./commands');
+
+const token = loadToken();
+const config = new Config();
+const rest = createRest(token);
+const gateway = new Gateway(token);
+const cache = new Cache();
 
-// Tipos de canais que suportam threads (strings usadas pela biblioteca)
-const THREAD_PARENT_TYPES = [
-  'GUILD_TEXT',
-  'GUILD_ANNOUNCEMENT',
-  'GUILD_NEWS',
-  'GUILD_FORUM',
-  'GUILD_MEDIA',
-  0, 5, 15, 16 // também aceitar números por compatibilidade
-];
-
-// ═══════════════════════════════════════════════════════════════════
-// CONFIGURAÇÃO DINÂMICA (pode ser alterada via comandos)
-// ═══════════════════════════════════════════════════════════════════
-
-const config = {
-  channelId: process.env.CHANNEL_ID || '',
-  autoMessage: process.env.AUTO_MESSAGE || '',
-  waitForMessage: parseInt(process.env.WAIT_FOR_MESSAGE) || 0, // ms para aguardar primeira mensagem (0 = desativado)
-  humanizedDelay: parseInt(process.env.HUMANIZED_DELAY) || 900, // ms de delay extra para compensar ping
-  prefix: '!autoPing',
-  enabled: true
-};
-
-// Validar token obrigatório
-if (!process.env.DISCORD_TOKEN || process.env.DISCORD_TOKEN.includes('seu_token')) {
-  console.error('❌ Erro: DISCORD_TOKEN não configurado no arquivo .env');
-  process.exit(1);
-}
-
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-
-// ═══════════════════════════════════════════════════════════════════
-// ENVIO ULTRA-RÁPIDO VIA UNDICI COM POOL DE CONEXÕES
-// ═══════════════════════════════════════════════════════════════════
-
-const { Pool } = require('undici');
-
-// Pool de conexões persistentes para Discord API
-// Mantém conexões TCP/TLS abertas para reutilização
-const discordPool = new Pool('https://discord.com', {
-  connections: 10,           // Número de conexões simultâneas
-  pipelining: 1,             // Requests por conexão
-  keepAliveTimeout: 300000,  // Manter conexão viva por 5 minutos
-  keepAliveMaxTimeout: 600000, // Máximo 10 minutos
-  connect: {
-    rejectUnauthorized: true
-  }
-});
-
-// Headers pré-configurados (não mudam)
-const STATIC_HEADERS = {
-  'authorization': DISCORD_TOKEN,
-  'content-type': 'application/json',
-};
-
-// Cache do body JSON stringificado
-let cachedMessageBody = null;
-let lastMessageContent = null;
-
-// Intervalo do keep-warm
-let keepWarmInterval = null;
-
-/**
- * Mantém a conexão "quente" fazendo pings periódicos
- * Isso evita que o TLS handshake precise ser refeito
- */
-function startKeepWarm() {
-  // Ping a cada 30 segundos para manter conexão viva
-  keepWarmInterval = setInterval(async () => {
-    try {
-      await discordPool.request({
-        path: '/api/v10/gateway',
-        method: 'GET',
-        headers: { 'authorization': DISCORD_TOKEN }
-      });
-    } catch (e) {
-      // Ignora erros - é só keep-warm
-    }
-  }, 30000); // 30 segundos
-
-  console.log('🔥 Keep-warm ativado (ping a cada 30s)');
-}
-
-/**
- * Pré-aquece a conexão com o Discord (chamado no ready)
- */
-async function warmupConnection() {
-  try {
-    // Faz um request simples para estabelecer conexão TLS
-    await discordPool.request({
-      path: '/api/v10/gateway',
-      method: 'GET',
-      headers: { 'authorization': DISCORD_TOKEN }
-    });
-    console.log('🔥 Conexão com Discord API pré-aquecida!');
-
-    // Iniciar keep-warm
-    startKeepWarm();
-  } catch (e) {
-    // Ignora erros - é só warmup
-    console.log('⚠️ Warmup falhou, tentando keep-warm mesmo assim');
-    startKeepWarm();
-  }
-}
-
-/**
- * Envia mensagem via pool de conexões (reutiliza conexão TLS)
- */
-async function sendMessageDirect(channelId, content) {
-  // Usar body cacheado se mensagem não mudou
-  if (content !== lastMessageContent) {
-    cachedMessageBody = JSON.stringify({ content });
-    lastMessageContent = content;
-  }
-
-  const { statusCode } = await discordPool.request({
-    path: `/api/v10/channels/${channelId}/messages`,
-    method: 'POST',
-    headers: STATIC_HEADERS,
-    body: cachedMessageBody
-  });
-
-  if (statusCode >= 400) {
-    throw new Error(`HTTP ${statusCode}`);
-  }
-}
-
-// Criar cliente Discord com otimizações de performance
-const client = new Client({
-  checkUpdate: false,
-  ws: {
-    properties: {
-      browser: 'Discord Android' // Pode ajudar com rate limits
-    }
-  },
-  // Reduzir overhead de cache
-  sweepers: {
-    messages: {
-      interval: 60,
-      lifetime: 30
-    }
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════
-// FUNÇÕES DE VALIDAÇÃO E UTILITÁRIOS
-// ═══════════════════════════════════════════════════════════════════
-
-/**
- * Valida se um canal existe e é acessível
- */
-async function validateChannel(channelId) {
-  if (!channelId || channelId.length < 17) {
-    return { valid: false, error: 'ID do canal inválido. Deve ter 17-19 dígitos.' };
-  }
-
-  try {
-    const channel = await client.channels.fetch(channelId);
-
-    if (!channel) {
-      return { valid: false, error: 'Canal não encontrado. Verifique se o ID está correto.' };
-    }
-
-    // Log do tipo de canal para debug
-    console.log(`   📋 Tipo do canal: ${channel.type}`);
-
-    // Verificar tipo de canal - aceitar qualquer canal de guild que suporte threads
-    if (!THREAD_PARENT_TYPES.includes(channel.type)) {
-      return { valid: false, error: `Tipo de canal (${channel.type}) não suportado. Use um canal de texto, fórum, mídia ou anúncios.` };
-    }
-
-    // Verificar permissões (usando try-catch pois as flags podem variar entre versões)
-    try {
-      const permissions = channel.permissionsFor(client.user);
-      if (permissions) {
-        // Tentar diferentes nomes de permissão (compatibilidade entre versões)
-        const canSend = permissions.has('SEND_MESSAGES') ||
-          permissions.has('SendMessages') ||
-          permissions.has(0x800n) || // Bitfield para SEND_MESSAGES
-          permissions.has(2048);     // Número decimal
-        if (!canSend) {
-          return { valid: false, error: 'Sem permissão para enviar mensagens neste canal.' };
-        }
-      }
-    } catch (permError) {
-      // Se der erro na verificação de permissão, ignorar e tentar usar o canal mesmo assim
-      console.log(`   ⚠️ Não foi possível verificar permissões: ${permError.message}`);
-    }
-
-    return {
-      valid: true,
-      channel,
-      info: `#${channel.name} (${channel.guild.name})`
-    };
-  } catch (error) {
-    if (error.code === 10003) {
-      return { valid: false, error: 'Canal não encontrado. O ID pode estar incorreto ou você não tem acesso.' };
-    }
-    if (error.code === 50001) {
-      return { valid: false, error: 'Sem permissão para acessar este canal.' };
-    }
-    return { valid: false, error: `Erro ao validar canal: ${error.message}` };
-  }
-}
-
-/**
- * Valida a mensagem automática
- */
-function validateMessage(message) {
-  if (!message || message.trim().length === 0) {
-    return { valid: false, error: 'A mensagem não pode estar vazia.' };
-  }
-  if (message.length > 2000) {
-    return { valid: false, error: 'A mensagem não pode ter mais de 2000 caracteres.' };
-  }
-  return { valid: true };
-}
-
-/**
- * Lista todos os canais de texto disponíveis
- */
-function listChannels() {
-  const channels = [];
-
-  client.guilds.cache.forEach((guild) => {
-    const textChannels = guild.channels.cache.filter(
-      ch => THREAD_PARENT_TYPES.includes(ch.type)
-    );
-
-    textChannels.forEach((channel) => {
-      let typeIcon = '💬';
-      if (channel.type === 'GUILD_FORUM' || channel.type === 15) typeIcon = '📋';
-      if (channel.type === 'GUILD_ANNOUNCEMENT' || channel.type === 'GUILD_NEWS' || channel.type === 5) typeIcon = '📢';
-
-      channels.push({
-        id: channel.id,
-        name: channel.name,
-        guild: guild.name,
-        icon: typeIcon
-      });
-    });
-  });
-
-  return channels;
-}
-
-/**
- * Formata a lista de canais para exibição
- */
-function formatChannelList(channels, maxPerMessage = 15) {
-  if (channels.length === 0) {
-    return ['Nenhum canal encontrado.'];
-  }
-
-  const messages = [];
-  let currentMsg = '📋 **Canais Disponíveis:**\n```\n';
-  let count = 0;
-
-  // Agrupar por servidor
-  const byGuild = {};
-  channels.forEach(ch => {
-    if (!byGuild[ch.guild]) byGuild[ch.guild] = [];
-    byGuild[ch.guild].push(ch);
-  });
-
-  for (const [guild, chs] of Object.entries(byGuild)) {
-    currentMsg += `\n🏠 ${guild}\n`;
-    for (const ch of chs) {
-      const line = `   ${ch.icon} #${ch.name}\n      ID: ${ch.id}\n`;
-      if (currentMsg.length + line.length > 1900 || count >= maxPerMessage) {
-        currentMsg += '```';
-        messages.push(currentMsg);
-        currentMsg = '```\n';
-        count = 0;
-      }
-      currentMsg += line;
-      count++;
-    }
-  }
-
-  if (currentMsg.length > 10) {
-    currentMsg += '```\n💡 Use `!autoPing canal ID` para definir o canal.';
-    messages.push(currentMsg);
-  }
-
-  return messages;
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// COMANDOS
-// ═══════════════════════════════════════════════════════════════════
-
-const commands = {
-  async status(message) {
-    const channelInfo = config.channelId
-      ? await validateChannel(config.channelId)
-      : { valid: false };
-
-    const waitModeText = config.waitForMessage > 0
-      ? `⏱️ Aguardar 1ª mensagem (até ${config.waitForMessage}ms)`
-      : '⚡ Responder imediatamente';
-
-    const statusText = `
-**🤖 Status do AutoPing**
-
-📺 **Canal:** ${channelInfo.valid ? channelInfo.info : (config.channelId || 'Não configurado')}
-${channelInfo.valid ? '✅ Canal válido' : '❌ ' + (channelInfo.error || 'Canal não configurado')}
-
-💬 **Mensagem:** \`${config.autoMessage || 'Não configurada'}\`
-${config.autoMessage ? '✅ Mensagem válida' : '❌ Mensagem não configurada'}
-
-🕐 **Modo:** ${waitModeText}
-
-⚡ **Status:** ${config.enabled ? '🟢 Ativo' : '🔴 Desativado'}
-
-📝 **Comandos:** \`!autoPing ajuda\`
-    `.trim();
-
-    // Log no terminal
-    console.log('\n📋 Comando: !autoPing status');
-    console.log(`   📺 Canal: ${channelInfo.valid ? channelInfo.info : (config.channelId || 'Não configurado')}`);
-    console.log(`   💬 Mensagem: "${config.autoMessage || 'Não configurada'}"`);
-    console.log(`   🕐 Modo: ${config.waitForMessage > 0 ? `Aguardar ${config.waitForMessage}ms` : 'Resposta imediata'}`);
-    console.log(`   ⚡ Status: ${config.enabled ? '🟢 Ativo' : '🔴 Desativado'}\n`);
-
-    await message.channel.send(statusText);
-  },
-
-  async canal(message, args) {
-    const newChannelId = args[0];
-
-    if (!newChannelId) {
-      console.log('\n📋 Comando: !autoPing canal');
-      console.log('   ❌ ID do canal não fornecido');
-      console.log('   💡 Use: !autoPing canal ID_DO_CANAL\n');
-      return;
-    }
-
-    console.log('\n📋 Comando: !autoPing canal');
-    console.log(`   🔄 Validando canal: ${newChannelId}`);
-
-    const validation = await validateChannel(newChannelId);
-
-    if (!validation.valid) {
-      console.log(`   ❌ Erro: ${validation.error}\n`);
-      return;
-    }
-
-    const oldChannel = config.channelId;
-    config.channelId = newChannelId;
-
-    console.log(`   ✅ Canal alterado: ${oldChannel || 'nenhum'} → ${newChannelId}`);
-    console.log(`   📺 Novo canal: ${validation.info}\n`);
-
-    // Atualizar cache do canal
-    cachedChannelInfo = validation.info;
-
-    // Exibir status atualizado
-    await printStatus();
-  },
-
-  async msg(message, args) {
-    const newMessage = args.join(' ');
-
-    console.log('\n📋 Comando: !autoPing msg');
-
-    if (!newMessage) {
-      console.log('   ❌ Mensagem não fornecida');
-      console.log('   💡 Use: !autoPing msg SUA_MENSAGEM\n');
-      return;
-    }
-
-    const validation = validateMessage(newMessage);
-
-    if (!validation.valid) {
-      console.log(`   ❌ Erro: ${validation.error}\n`);
-      return;
-    }
-
-    const oldMessage = config.autoMessage;
-    config.autoMessage = newMessage;
-
-    console.log(`   ✅ Mensagem alterada: "${oldMessage || 'nenhuma'}" → "${newMessage}"\n`);
-
-    // Exibir status atualizado
-    await printStatus();
-  },
-
-  async listar(message) {
-    console.log('\n📋 Comando: !autoPing listar');
-    console.log('   🔄 Carregando lista de canais...');
-    await message.channel.send('🔄 Carregando lista de canais...');
-
-    const channels = listChannels();
-    const messages = formatChannelList(channels);
-
-    console.log(`   ✅ ${channels.length} canais encontrados\n`);
-
-    // Log dos canais no terminal
-    channels.forEach(ch => {
-      console.log(`      ${ch.icon} ${ch.guild} > #${ch.name} (${ch.id})`);
-    });
-    console.log('');
-
-    for (const msg of messages) {
-      await message.channel.send(msg);
-    }
-  },
-
-  async ajuda(message) {
-    console.log('\n📋 Comando: !autoPing ajuda');
-    console.log('   📝 Exibindo lista de comandos\n');
-
-    const helpText = `
-**🤖 Comandos do AutoPing**
-
-\`!autoPing status\` - Mostra a configuração atual
-\`!autoPing canal ID\` - Define o canal a ser monitorado
-\`!autoPing msg TEXTO\` - Define a mensagem automática
-\`!autoPing delay MS\` - Define tempo de espera (0 = imediato)
-\`!autoPing listar\` - Lista todos os canais disponíveis
-\`!autoPing on\` - Ativa o AutoPing
-\`!autoPing off\` - Desativa o AutoPing
-\`!autoPing ajuda\` - Mostra esta mensagem
-
-**Exemplos:**
-\`!autoPing canal 123456789012345678\`
-\`!autoPing msg 222/555/666-FB/666-Rep\`
-\`!autoPing delay 5000\` - Aguarda até 5s pela 1ª mensagem
-\`!autoPing delay 0\` - Responde imediatamente
-    `.trim();
-
-    await message.channel.send(helpText);
-  },
-
-  async on(message) {
-    console.log('\n📋 Comando: !autoPing on');
-    config.enabled = true;
-    console.log('   🟢 AutoPing ATIVADO\n');
-
-    // Exibir status atualizado
-    await printStatus();
-  },
-
-  async delay(message, args) {
-    const newDelay = parseInt(args[0]);
-
-    console.log('\n📋 Comando: !autoPing delay');
-
-    if (args.length === 0 || isNaN(newDelay) || newDelay < 0) {
-      console.log(`   ❌ Valor inválido. Atual: ${config.waitForMessage}ms`);
-      console.log('   💡 Use: !autoPing delay MS (ex: 5000 ou 0)\n');
-      return;
-    }
-
-    const oldDelay = config.waitForMessage;
-    config.waitForMessage = newDelay;
-
-    console.log(`   ✅ Delay alterado: ${oldDelay}ms → ${newDelay}ms\n`);
-
-    // Exibir status atualizado
-    await printStatus();
-  },
-
-  async off(message) {
-    console.log('\n📋 Comando: !autoPing off');
-    config.enabled = false;
-    console.log('   🔴 AutoPing DESATIVADO\n');
-
-    // Exibir status atualizado
-    await printStatus();
-  }
-};
-
-// ═══════════════════════════════════════════════════════════════════
-// FUNÇÃO DE STATUS
-// ═══════════════════════════════════════════════════════════════════
-
-// Cache do nome do canal para evitar fetch repetido
 let cachedChannelInfo = null;
 
-/**
- * Imprime o status atual do bot no terminal
- */
-async function printStatus() {
-  // Buscar info do canal (usar cache se disponível)
-  if (!cachedChannelInfo && config.channelId) {
-    const validation = await validateChannel(config.channelId);
-    if (validation.valid) {
-      cachedChannelInfo = validation.info;
-    }
-  }
+// ═══════════════════════════════════════════════════════════════════
+// STATUS
+// ═══════════════════════════════════════════════════════════════════
 
+const validateChannel = createChannelValidator({ rest, cache });
+
+async function printStatus() {
+  if (!cachedChannelInfo && config.channelId) {
+    const v = await validateChannel(config.channelId);
+    if (v.valid) cachedChannelInfo = v.info;
+  }
+  const user = gateway.user;
   console.log('═'.repeat(50));
-  console.log(`👤 Logado como: ${client.user.tag}`);
+  console.log(`👤 Logado como: ${user ? user.username : '?'}`);
   console.log(`📺 Monitorando: ${cachedChannelInfo || config.channelId || 'Não configurado'}`);
   console.log(`💬 Mensagem: "${config.autoMessage || 'Não configurada'}"`);
-  console.log(`🕐 Modo: ${config.waitForMessage > 0 ? `Aguardar até ${config.waitForMessage}ms pela 1ª mensagem` : 'Resposta imediata'}`);
+  console.log(`🕐 Modo: ${modeText(config)}`);
+  console.log(`⚡ Status: ${config.enabled ? '🟢 Ativo' : '🔴 Desativado'}`);
   console.log('═'.repeat(50));
   console.log('📝 Comandos disponíveis: !autoPing ajuda');
   console.log('⏳ Aguardando criação de novos tópicos...\n');
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// EVENTOS DO DISCORD
+// RESPONDER + MODO HUMANIZADO
 // ═══════════════════════════════════════════════════════════════════
 
-// Set para evitar processamento duplicado entre raw e threadCreate
-const processedThreads = new Set();
-
-// Map para modo humanizado: guarda tópicos aguardando primeira mensagem
-// Formato: { threadId: { ownerId, startTime, timeout } }
-const pendingThreads = new Map();
-
-// MODO ULTRA-RÁPIDO HUMANIZADO: Detecta primeira mensagem via RAW
-client.on('raw', async (packet) => {
-  // Detectar MESSAGE_CREATE para modo humanizado
-  if (packet.t === 'MESSAGE_CREATE' && config.waitForMessage > 0) {
-    const msg = packet.d;
-
-    // Debug: mostrar todas mensagens em canais pendentes
-    if (pendingThreads.has(msg.channel_id)) {
-      console.log(`   🔍 [DEBUG] MESSAGE_CREATE recebido:`);
-      console.log(`      Canal: ${msg.channel_id}`);
-      console.log(`      Autor: ${msg.author?.id} (esperando: ${pendingThreads.get(msg.channel_id)?.ownerId})`);
-    }
-
-    const pending = pendingThreads.get(msg.channel_id);
-
-    // Verificar se é a primeira mensagem do criador do tópico que estamos aguardando
-    if (pending && msg.author?.id === pending.ownerId) {
-      // Cancelar timeout
-      if (pending.timeout) clearTimeout(pending.timeout);
-      pendingThreads.delete(msg.channel_id);
-
-      // Marcar como processado
-      if (processedThreads.has(msg.channel_id)) return;
-      processedThreads.add(msg.channel_id);
-
-      const startTime = pending.startTime;
-
-
-      try {
-        // Pequeno delay para garantir ordem visual (configurável via .env)
-        await new Promise(res => setTimeout(res, config.humanizedDelay));
-        await sendMessageDirect(msg.channel_id, config.autoMessage);
-
-        const responseTime = Date.now() - startTime;
-
-        console.log(`   📨 Primeira mensagem detectada via RAW!`);
-        console.log(`   ✅ Resposta enviada!`);
-        console.log(`   ⚡ Tempo de resposta: ${responseTime}ms\n`);
-
-        await printStatus();
-      } catch (error) {
-        console.error(`   ❌ Erro ao enviar: ${error.message}\n`);
-        processedThreads.delete(msg.channel_id);
-      }
-
-      // Limpar após 30s
-      setTimeout(() => processedThreads.delete(msg.channel_id), 30000);
-      return;
-    }
-  }
-
-  // MODO IMEDIATO: Detectar THREAD_CREATE
-  if (packet.t !== 'THREAD_CREATE') return;
-
-  if (!config.enabled || !config.autoMessage) return;
-
-  const data = packet.d;
-  if (!data.newly_created || data.parent_id !== config.channelId) return;
-  if (processedThreads.has(data.id)) return;
-
-  const startTime = Date.now();
-
-  console.log(`\n⚡ [RAW] Novo tópico detectado!`);
-  console.log(`   📌 Nome: ${data.name}`);
-  console.log(`   🆔 ID: ${data.id}`);
-  console.log(`   👤 Criador: ${data.owner_id}`);
-  console.log(`   🔍 [DEBUG] Tipo: ${data.type}, message_count: ${data.message_count}`);
-  console.log(`   🔍 [DEBUG] Tem message embutida: ${!!data.message}`);
-
-  // Sempre aguardar a primeira mensagem do criador, mesmo se já houver message embutida
-  if (config.waitForMessage > 0) {
-    console.log(`   ⏳ Aguardando primeira mensagem do criador (até ${config.waitForMessage}ms)...`);
-
-    // Configurar timeout
-    const timeout = setTimeout(async () => {
-      if (pendingThreads.has(data.id)) {
-        pendingThreads.delete(data.id);
-
-        // Enviar mesmo sem mensagem (timeout)
-        if (!processedThreads.has(data.id)) {
-          processedThreads.add(data.id);
-
-          try {
-            await sendMessageDirect(data.id, config.autoMessage);
-            const responseTime = Date.now() - startTime;
-
-            console.log(`   ⏰ Timeout - enviando mesmo assim`);
-            console.log(`   ✅ Mensagem enviada!`);
-            console.log(`   ⚡ Tempo de resposta: ${responseTime}ms\n`);
-
-            await printStatus();
-          } catch (error) {
-            console.error(`   ❌ Erro ao enviar: ${error.message}\n`);
-            processedThreads.delete(data.id);
-          }
-
-          setTimeout(() => processedThreads.delete(data.id), 30000);
-        }
-      }
-    }, config.waitForMessage);
-
-    // Guardar para monitoramento
-    pendingThreads.set(data.id, {
-      ownerId: data.owner_id,
-      startTime,
-      timeout
-    });
-
-    return;
-  }
-
-  // MODO IMEDIATO: Enviar direto
-  processedThreads.add(data.id);
-
-  try {
-    // ENVIAR PRIMEIRO - logs depois!
-    await sendMessageDirect(data.id, config.autoMessage);
-
-    const responseTime = Date.now() - startTime;
-
-    console.log(`   ✅ Mensagem enviada via RAW!`);
-    console.log(`   ⚡ Tempo de resposta: ${responseTime}ms\n`);
-
-    // Exibir status após envio
-    await printStatus();
-  } catch (error) {
-    console.error(`\n❌ [RAW] Erro ao enviar: ${error.message}`);
-    // Se falhar via raw, o threadCreate ainda pode tentar
-    processedThreads.delete(data.id);
-  }
-
-  // Limpar cache após 30 segundos
-  setTimeout(() => processedThreads.delete(data.id), 30000);
+const responder = createResponder({
+  config,
+  rest,
+  onSent: () => { printStatus().catch(() => {}); },
 });
 
-// Evento: Bot conectado
-client.on('ready', async () => {
+const humanized = new HumanizedWaiter({
+  getWaitMs: () => config.waitForMessage,
+  getDelayMs: () => config.humanizedDelay,
+  send: (threadId, startTime, reason) => responder.send(threadId, startTime, reason),
+});
+responder.setHumanized(humanized);
+
+humanized.on('owner-message', ({ threadId, early }) => {
+  console.log(`   📨 1ª mensagem do criador detectada${early ? ' (antes do tópico)' : ''} em ${threadId}`);
+});
+humanized.on('timeout', ({ threadId }) => {
+  console.log(`   ⏰ Timeout em ${threadId} - enviando mesmo assim`);
+});
+humanized.on('cancelled', ({ count }) => {
+  console.log(`   🚫 ${count} tópico(s) pendente(s) cancelado(s)`);
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// REAÇÕES A MUDANÇAS DE CONFIG
+// ═══════════════════════════════════════════════════════════════════
+
+async function subscribeMonitoredChannel(guildIdHint) {
+  if (!config.channelId) return;
+  const guildId = guildIdHint || (cache.getChannel(config.channelId) || {}).guildId;
+  if (guildId && gateway.subscribeChannel(guildId, config.channelId)) {
+    console.log('📡 Inscrito nos eventos do canal monitorado');
+  }
+}
+
+config.on('change', (key, value) => {
+  if (key === 'enabled' && !value) humanized.cancelAll();
+  if (key === 'channelId') {
+    humanized.cancelAll();
+    cachedChannelInfo = null;
+    subscribeMonitoredChannel();
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// GATEWAY
+// ═══════════════════════════════════════════════════════════════════
+
+const commands = createCommands({
+  config,
+  rest,
+  cache,
+  validateChannel,
+  getSelfId: () => gateway.user && gateway.user.id,
+  printStatus,
+});
+
+gateway.on('dispatch', (t, d) => {
+  // Caminho quente primeiro.
+  responder.handleDispatch(t, d);
+
+  cache.handleDispatch(t, d);
+  if (t === 'MESSAGE_CREATE') commands.handleMessage(d);
+});
+
+gateway.on('ready', async (d) => {
+  cache.loadReady(d);
   console.log('═'.repeat(50));
   console.log('🚀 Discord AutoPing Iniciado!');
 
-  // Pré-aquecer conexão com Discord API (reduz latência do primeiro request)
-  warmupConnection();
+  rest.warmup();
 
-  // Validar e cachear canal inicial
   if (config.channelId) {
-    const validation = await validateChannel(config.channelId);
-    if (validation.valid) {
-      cachedChannelInfo = validation.info;
+    const v = await validateChannel(config.channelId);
+    if (v.valid) {
+      cachedChannelInfo = v.info;
+      subscribeMonitoredChannel(v.guildId);
     } else {
-      console.log(`⚠️ Canal configurado mas com problema: ${validation.error}`);
-      console.log(`   Use !autoPing canal ID para configurar um canal válido`);
+      console.log(`⚠️ Canal configurado mas com problema: ${v.error}`);
+      console.log('   Use !autoPing canal ID para configurar um canal válido');
     }
   }
 
   await printStatus();
 });
 
-// Evento: Mensagem recebida (para comandos)
-client.on('messageCreate', async (message) => {
-  // Ignorar mensagens de outros usuários
-  if (message.author.id !== client.user.id) return;
+gateway.on('resumed', () => console.log('🔄 Sessão retomada'));
 
-  // Verificar se é um comando
-  if (!message.content.startsWith(config.prefix)) return;
-
-  const args = message.content.slice(config.prefix.length).trim().split(/\s+/);
-  const commandName = args.shift()?.toLowerCase();
-
-  if (commandName && commands[commandName]) {
-    try {
-      await commands[commandName](message, args);
-      // Deletar mensagem de comando após 2 segundos (opcional, para não poluir)
-      setTimeout(() => message.delete().catch(() => { }), 2000);
-    } catch (error) {
-      console.error(`❌ Erro ao executar comando ${commandName}:`, error.message);
-      await message.channel.send(`❌ Erro ao executar comando: ${error.message}`);
-    }
-  }
+gateway.on('fatal', (code, reason) => {
+  console.error(`❌ Erro fatal no gateway (${code}): ${reason}`);
+  if (code === 4004) console.error('   💡 O token está inválido. Gere um novo token.');
+  shutdown(1);
 });
 
-// Evento: Novo tópico (thread) criado
-// FALLBACK: Só executa se o RAW handler falhar
-client.on('threadCreate', async (thread, newlyCreated) => {
-  // Verificações rápidas
-  if (!config.enabled) return;
-  if (!newlyCreated) return;
-  if (thread.parentId !== config.channelId) return;
-  if (!config.autoMessage) return;
+// ═══════════════════════════════════════════════════════════════════
+// PROCESSO
+// ═══════════════════════════════════════════════════════════════════
 
-  // Verificar se já foi processado pelo raw handler
-  if (processedThreads.has(thread.id)) return;
-
-  // Modo humanizado: verificar se está pendente (RAW está cuidando)
-  if (pendingThreads.has(thread.id)) return;
-
-  // Se chegou aqui, o RAW falhou - usar fallback
-  console.log(`\n⚠️ [FALLBACK] Processando tópico ${thread.id}`);
-
-  processedThreads.add(thread.id);
-  const startTime = Date.now();
-
-  try {
-    await sendMessageDirect(thread.id, config.autoMessage);
-    const responseTime = Date.now() - startTime;
-
-    console.log(`   ✅ Mensagem enviada via fallback!`);
-    console.log(`   ⚡ Tempo de resposta: ${responseTime}ms\n`);
-
-    await printStatus();
-  } catch (error) {
-    console.error(`   ❌ Erro no fallback: ${error.message}\n`);
-    processedThreads.delete(thread.id);
-  }
-
-  setTimeout(() => processedThreads.delete(thread.id), 30000);
-});
-
-// Evento: Erro de conexão
-client.on('error', (error) => {
-  console.error('❌ Erro de conexão:', error.message);
-
-  if (error.code === 'TOKEN_INVALID') {
-    console.error('   💡 O token está inválido. Gere um novo token.');
-  }
-});
-
-// Evento: Desconectado
-client.on('disconnect', () => {
-  console.log('⚠️ Desconectado do Discord. Tentando reconectar...');
-});
-
-// Evento: Reconectando
-client.on('reconnecting', () => {
-  console.log('🔄 Reconectando ao Discord...');
-});
-
-// Tratamento de erros não capturados
-process.on('unhandledRejection', (error) => {
-  console.error('❌ Erro não tratado:', error.message);
-});
-
-// Tratamento de encerramento gracioso
-process.on('SIGINT', () => {
+let shuttingDown = false;
+async function shutdown(code = 0) {
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log('\n👋 Encerrando AutoPing...');
-  if (keepWarmInterval) clearInterval(keepWarmInterval);
-  discordPool.close();
-  client.destroy();
-  process.exit(0);
+  humanized.destroy();
+  gateway.destroy();
+  await rest.close();
+  process.exit(code);
+}
+
+process.on('SIGINT', () => shutdown(0));
+process.on('SIGTERM', () => shutdown(0));
+process.on('unhandledRejection', (error) => {
+  console.error('❌ Erro não tratado:', error && error.message ? error.message : error);
 });
 
-// Conectar ao Discord
 console.log('🔄 Conectando ao Discord...\n');
-client.login(DISCORD_TOKEN);
+gateway.connect();

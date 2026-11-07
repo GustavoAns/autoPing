@@ -1,98 +1,95 @@
 /**
- * Utilitário para listar todos os canais de texto dos servidores
- * Facilita a obtenção dos IDs dos canais para configuração
- * 
+ * Utilitário para listar todos os canais (que suportam tópicos) dos servidores.
+ * Facilita a obtenção dos IDs para configuração.
+ *
  * Uso: npm run list-channels
  */
 
-require('dotenv').config();
-const { Client, ChannelType } = require('discord.js-selfbot-v13');
+const { loadToken, THREAD_PARENT_TYPES, CHANNEL_TYPE_ICONS } = require('../config');
+const { Gateway } = require('../discord/gateway');
+const { Cache } = require('../discord/cache');
 
-if (!process.env.DISCORD_TOKEN || process.env.DISCORD_TOKEN.includes('seu_token')) {
-  console.error('❌ Configure o DISCORD_TOKEN no arquivo .env primeiro!');
-  process.exit(1);
-}
+// Servidores grandes podem chegar via GUILD_CREATE depois do READY.
+const SETTLE_MS = 3000;
 
-const client = new Client({
-  checkUpdate: false,
-});
+const token = loadToken();
+const gateway = new Gateway(token);
+const cache = new Cache();
+let settleTimer = null;
 
-client.on('ready', () => {
+function printAndExit() {
+  const user = gateway.user;
   console.log('═'.repeat(70));
-  console.log('📋 LISTA DE CANAIS DE TEXTO');
-  console.log(`👤 Logado como: ${client.user.tag}`);
+  console.log('📋 LISTA DE CANAIS');
+  console.log(`👤 Logado como: ${user ? user.username : '?'}`);
   console.log('═'.repeat(70));
 
-  // Agrupar canais por servidor
-  const servers = client.guilds.cache;
-
-  if (servers.size === 0) {
+  if (cache.guilds.size === 0) {
     console.log('\n⚠️ Você não está em nenhum servidor.\n');
-    client.destroy();
-    process.exit(0);
   }
 
-  servers.forEach((guild) => {
+  const channels = cache.listChannels(THREAD_PARENT_TYPES);
+  const byGuild = new Map();
+  for (const ch of channels) {
+    if (!byGuild.has(ch.guildId)) byGuild.set(ch.guildId, []);
+    byGuild.get(ch.guildId).push(ch);
+  }
+
+  for (const guild of cache.guilds.values()) {
     console.log(`\n🏠 SERVIDOR: ${guild.name}`);
     console.log(`   ID do Servidor: ${guild.id}`);
     console.log('   ' + '─'.repeat(50));
 
-    // Filtrar apenas canais de texto
-    const textChannels = guild.channels.cache.filter(
-      ch => ch.type === ChannelType.GuildText ||
-        ch.type === ChannelType.GuildForum ||
-        ch.type === ChannelType.GuildAnnouncement
-    );
-
-    if (textChannels.size === 0) {
-      console.log('   (Nenhum canal de texto encontrado)');
-      return;
+    const chs = byGuild.get(guild.id) || [];
+    if (chs.length === 0) {
+      console.log('   (Nenhum canal encontrado)');
+      continue;
     }
 
-    // Ordenar por categoria
-    const channelsByCategory = {};
+    const byCategory = new Map();
+    for (const ch of chs) {
+      const cat = ch.categoryName || '📁 Sem Categoria';
+      if (!byCategory.has(cat)) byCategory.set(cat, []);
+      byCategory.get(cat).push(ch);
+    }
 
-    textChannels.forEach((channel) => {
-      const categoryName = channel.parent?.name || '📁 Sem Categoria';
-      if (!channelsByCategory[categoryName]) {
-        channelsByCategory[categoryName] = [];
-      }
-
-      let typeIcon = '💬';
-      if (channel.type === ChannelType.GuildForum) typeIcon = '📋';
-      if (channel.type === ChannelType.GuildAnnouncement) typeIcon = '📢';
-
-      channelsByCategory[categoryName].push({
-        name: channel.name,
-        id: channel.id,
-        icon: typeIcon
-      });
-    });
-
-    // Exibir canais organizados por categoria
-    Object.entries(channelsByCategory).forEach(([category, channels]) => {
+    for (const [category, list] of byCategory) {
       console.log(`\n   📁 ${category}`);
-      channels.forEach((ch) => {
-        console.log(`      ${ch.icon} #${ch.name}`);
+      for (const ch of list) {
+        console.log(`      ${CHANNEL_TYPE_ICONS[ch.type] || '💬'} #${ch.name}`);
         console.log(`         ID: ${ch.id}`);
-      });
-    });
-  });
+      }
+    }
+  }
 
   console.log('\n' + '═'.repeat(70));
   console.log('💡 DICA: Copie o ID do canal desejado para o arquivo .env');
   console.log('         Defina: CHANNEL_ID=<id_copiado>');
   console.log('═'.repeat(70) + '\n');
 
-  // Encerrar após listar
-  client.destroy();
+  gateway.destroy();
   process.exit(0);
+}
+
+function scheduleSettle() {
+  if (settleTimer) clearTimeout(settleTimer);
+  settleTimer = setTimeout(printAndExit, SETTLE_MS);
+}
+
+gateway.on('dispatch', (t, d) => {
+  if (t === 'READY') {
+    cache.loadReady(d);
+    scheduleSettle();
+  } else if (t === 'GUILD_CREATE') {
+    cache.handleDispatch(t, d);
+    scheduleSettle();
+  }
 });
 
-client.on('error', (error) => {
-  console.error('❌ Erro:', error.message);
+gateway.on('fatal', (code, reason) => {
+  console.error(`❌ Erro (${code}): ${reason}`);
   process.exit(1);
 });
 
 console.log('🔄 Conectando para listar canais...\n');
-client.login(process.env.DISCORD_TOKEN);
+gateway.connect();

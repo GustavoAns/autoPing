@@ -68,7 +68,7 @@ docker-compose logs -f
 
 ### Opção 2: Sem Docker
 
-**Requisitos:** Node.js 20 ou superior
+**Requisitos:** Node.js 22 ou superior (recomendado 24 LTS)
 
 ```bash
 # 1. Instalar dependências
@@ -141,9 +141,12 @@ CHANNEL_ID=123456789012345678
 # Mensagem a ser enviada
 AUTO_MESSAGE=222/555/666-FB/666-Rep
 
-# Tempo de espera pela 1ª mensagem (em ms)
-# 0 = responde imediatamente | 5000 = aguarda até 5 segundos
+# A resposta sai logo após a 1ª mensagem do criador do tópico.
+# Tempo máximo aguardando essa mensagem (em ms). Padrão: 5000
 WAIT_FOR_MESSAGE=5000
+
+# Delay humanizado após a 1ª mensagem do criador (em ms). Padrão: 900 | 0 = mais rápido
+HUMANIZED_DELAY=900
 ```
 
 ---
@@ -153,9 +156,20 @@ WAIT_FOR_MESSAGE=5000
 ```
 autoPing/
 ├── src/
-│   ├── index.js              # Código principal
+│   ├── index.js              # Inicialização e integração dos módulos
+│   ├── config.js             # Configuração (.env + runtime)
+│   ├── commands.js           # Comandos !autoPing
+│   ├── core/
+│   │   ├── responder.js      # Decide quando enviar a mensagem
+│   │   └── humanized.js      # Modo humanizado (aguardar 1ª mensagem)
+│   ├── discord/
+│   │   ├── gateway.js        # Conexão WebSocket com o Discord
+│   │   ├── rest.js           # Envio HTTP ultra-rápido
+│   │   ├── cache.js          # Servidores e canais
+│   │   └── properties.js     # Identificação do cliente
 │   └── utils/
 │       └── listChannels.js   # Utilitário para listar canais
+├── test/                     # Testes (npm test)
 ├── .env                      # Configurações (não commitado)
 ├── .env.example              # Exemplo de configurações
 ├── .gitignore
@@ -175,6 +189,7 @@ autoPing/
 | `npm start` | Inicia o AutoPing |
 | `npm run dev` | Inicia com auto-reload (desenvolvimento) |
 | `npm run list-channels` | Lista todos os canais e seus IDs |
+| `npm test` | Roda os testes automatizados |
 
 ---
 
@@ -187,10 +202,10 @@ Digite estes comandos em **qualquer chat do Discord** (serão deletados automati
 | `!autoPing status` | Mostra a configuração atual |
 | `!autoPing canal ID` | Define o canal a ser monitorado |
 | `!autoPing msg TEXTO` | Define a mensagem automática |
-| `!autoPing delay MS` | Define tempo de espera (0 = imediato) |
+| `!autoPing delay MS` | Tempo máx. aguardando a 1ª msg do criador |
 | `!autoPing listar` | Lista todos os canais disponíveis |
 | `!autoPing on` | Ativa o AutoPing |
-| `!autoPing off` | Desativa o AutoPing |
+| `!autoPing off` | Desativa o AutoPing (cancela tópicos aguardando resposta) |
 | `!autoPing ajuda` | Mostra todos os comandos |
 
 **Exemplos:**
@@ -230,7 +245,7 @@ docker ps
 
 ---
 
-## � Múltiplas Contas (Instâncias)
+## 👥 Múltiplas Contas (Instâncias)
 
 Para rodar o bot em **várias contas simultaneamente**:
 
@@ -289,7 +304,7 @@ docker-compose -f docker-compose.multi.yml restart conta1
 
 ---
 
-## �🔧 Compartilhar com Outras Pessoas
+## 🔧 Compartilhar com Outras Pessoas
 
 Para distribuir este projeto:
 

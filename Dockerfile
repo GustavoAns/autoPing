@@ -2,8 +2,8 @@
 # Discord AutoPing - Dockerfile
 # ===========================================
 
-# Usar Node.js 20 LTS (Alpine para imagem menor)
-FROM node:20-alpine
+# Usar Node.js 24 LTS (Alpine para imagem menor)
+FROM node:24-alpine
 
 # Metadados
 LABEL maintainer="AutoPing"
@@ -16,7 +16,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Instalar dependências
-RUN npm ci && \
+RUN npm ci --omit=dev && \
     npm cache clean --force
 
 # Copiar código fonte
