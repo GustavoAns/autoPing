@@ -17,6 +17,11 @@ const CHANNEL_TYPE_ICONS = { 0: '💬', 5: '📢', 15: '📋', 16: '🖼️' };
 const DEFAULT_WAIT_MS = 5000;
 const DEFAULT_HUMANIZED_DELAY_MS = 900;
 
+function parseBool(value, fallback = false) {
+  if (value === undefined || value === null || value === '') return fallback;
+  return ['1', 'true', 'sim', 'yes', 'on'].includes(String(value).trim().toLowerCase());
+}
+
 function parseIntOr(value, fallback) {
   const n = parseInt(value, 10);
   return Number.isNaN(n) || n < 0 ? fallback : n;
@@ -33,6 +38,8 @@ class Config extends EventEmitter {
     // (nosso snowflake é sempre maior); o delay só deixa o tempo de resposta
     // mais "humano". 0 = mais rápido.
     this.humanizedDelay = parseIntOr(env.HUMANIZED_DELAY, DEFAULT_HUMANIZED_DELAY_MS);
+    // Sleep: após responder um tópico, desliga (enabled=false) até `!autoPing on`.
+    this.sleepAfterReply = parseBool(env.SLEEP_AFTER_REPLY, false);
     this.prefix = '!autoPing';
     this.enabled = true;
   }
@@ -50,6 +57,7 @@ class Config extends EventEmitter {
       autoMessage: this.autoMessage,
       waitForMessage: this.waitForMessage,
       humanizedDelay: this.humanizedDelay,
+      sleepAfterReply: this.sleepAfterReply,
       enabled: this.enabled,
     };
   }
@@ -86,6 +94,7 @@ module.exports = {
   loadToken,
   validateMessage,
   isSnowflake,
+  parseBool,
   THREAD_PARENT_TYPES,
   CHANNEL_TYPE_ICONS,
 };

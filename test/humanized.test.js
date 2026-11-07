@@ -121,4 +121,45 @@ test('config: WAIT_FOR_MESSAGE 0/vazio vira 5000; HUMANIZED_DELAY padrão 900', 
   assert.equal(new Config({ HUMANIZED_DELAY: '0' }).humanizedDelay, 0);
 });
 
+test('sleep: após responder desliga, cancela pendentes e só volta com on', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+  const config = new Config({ CHANNEL_ID: 'C1', AUTO_MESSAGE: 'oi', HUMANIZED_DELAY: '0', SLEEP_AFTER_REPLY: 'true' });
+  const calls = [];
+  const rest = { sendMessage: async (id) => calls.push(id) };
+  const responder = createResponder({ config, rest });
+  const waiter = new HumanizedWaiter({
+    getWaitMs: () => config.waitForMessage,
+    getDelayMs: () => config.humanizedDelay,
+    send: responder.send,
+  });
+  responder.setHumanized(waiter);
+  config.on('change', (key, value) => { if (key === 'enabled' && !value) waiter.cancelAll(); });
+
+  responder.handleDispatch('THREAD_CREATE', { id: 'A', parent_id: 'C1', newly_created: true, owner_id: 'U' });
+  responder.handleDispatch('THREAD_CREATE', { id: 'B', parent_id: 'C1', newly_created: true, owner_id: 'U' });
+  responder.handleDispatch('MESSAGE_CREATE', { channel_id: 'A', author: { id: 'U' } });
+  await Promise.resolve();
+  assert.equal(config.enabled, false);
+  assert.equal(waiter.pending.has('B'), false, 'B cancelado');
+
+  t.mock.timers.tick(10000);
+  responder.handleDispatch('THREAD_CREATE', { id: 'C', parent_id: 'C1', newly_created: true, owner_id: 'U' });
+  responder.handleDispatch('MESSAGE_CREATE', { channel_id: 'C', author: { id: 'U' } });
+  assert.deepEqual(calls, ['A']);
+
+  config.set('enabled', true);
+  responder.handleDispatch('THREAD_CREATE', { id: 'D', parent_id: 'C1', newly_created: true, owner_id: 'U' });
+  responder.handleDispatch('MESSAGE_CREATE', { channel_id: 'D', author: { id: 'U' } });
+  assert.deepEqual(calls, ['A', 'D']);
+  waiter.destroy();
+});
+
+test('sleep: envio falhou religa', async () => {
+  const config = new Config({ CHANNEL_ID: 'C1', AUTO_MESSAGE: 'oi', SLEEP_AFTER_REPLY: 'true' });
+  const rest = { sendMessage: async () => { throw new Error('HTTP 500'); } };
+  const responder = createResponder({ config, rest });
+  assert.equal(await responder.send('T', Date.now(), 'x'), false);
+  assert.equal(config.enabled, true);
+});
+
 mock.reset();

@@ -12,6 +12,10 @@
  *
  * Toda tentativa de envio passa por `send()`, que checa `config.enabled`
  * imediatamente antes do POST (garante que `off` bloqueia qualquer envio).
+ *
+ * Sleep (`config.sleepAfterReply`): após disparar o POST, desliga o AutoPing
+ * (enabled=false -> cancela pendentes) até `!autoPing on`. Se o envio
+ * falhar, religa.
  */
 
 const DEDUPE_TTL_MS = 30000;
@@ -33,17 +37,30 @@ function createResponder({ config, rest, onSent = () => {} }) {
     processed.add(threadId);
 
     const sendStart = Date.now();
+    const sending = rest.sendMessage(threadId, config.autoMessage);
+
+    // Sleep: desliga logo após disparar o POST (cancela pendentes e bloqueia
+    // envios concorrentes). Volta só com `!autoPing on`.
+    const sleeping = config.sleepAfterReply;
+    if (sleeping) config.set('enabled', false);
+
     try {
-      await rest.sendMessage(threadId, config.autoMessage);
+      await sending;
       const now = Date.now();
       const responseTime = now - startTime;
       console.log(`   ✅ Mensagem enviada (${reason}) no tópico ${threadId}`);
       console.log(`   ⚡ Tempo total desde o tópico: ${responseTime}ms | POST: ${now - sendStart}ms\n`);
       setTimeout(() => processed.delete(threadId), DEDUPE_TTL_MS).unref();
-      onSent({ threadId, responseTime, reason });
+      if (sleeping) console.log('   💤 Sleep: AutoPing desativado após responder. Use !autoPing on para voltar.\n');
+      onSent({ threadId, responseTime, reason, sleeping });
       return true;
     } catch (error) {
       processed.delete(threadId);
+      if (sleeping && !config.enabled) {
+        // Envio falhou: religa para não perder a próxima vaga.
+        config.set('enabled', true);
+        console.log('   🔁 Sleep revertido (envio falhou): AutoPing reativado.');
+      }
       console.error(`   ❌ Erro ao enviar no tópico ${threadId}: ${error.message}\n`);
       return false;
     }

@@ -42,6 +42,7 @@ async function printStatus() {
   console.log(`📺 Monitorando: ${cachedChannelInfo || config.channelId || 'Não configurado'}`);
   console.log(`💬 Mensagem: "${config.autoMessage || 'Não configurada'}"`);
   console.log(`🕐 Modo: ${modeText(config)}`);
+  console.log(`💤 Sleep após responder: ${config.sleepAfterReply ? 'Ligado' : 'Desligado'}`);
   console.log(`⚡ Status: ${config.enabled ? '🟢 Ativo' : '🔴 Desativado'}`);
   console.log('═'.repeat(50));
   console.log('📝 Comandos disponíveis: !autoPing ajuda');

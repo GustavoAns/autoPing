@@ -69,6 +69,7 @@ docker-compose -f docker-compose.multi.yml up -d --build
 | `AUTO_MESSAGE` | não* | `''` | Mensagem enviada. Sem ela, nada é enviado. |
 | `WAIT_FOR_MESSAGE` | não | `5000` | ms máx. aguardando 1ª msg do criador; depois envia mesmo assim (ex.: tópico criado a partir de msg existente). `0`/vazio = 5000. |
 | `HUMANIZED_DELAY` | não | `900` | Delay humanizado após a 1ª msg do criador. `0` = envio síncrono, mais rápido. |
+| `SLEEP_AFTER_REPLY` | não | `false` | Após responder, desliga (`enabled=false`, cancela pendentes) até `!autoPing on`. |
 | `CLIENT_BUILD_NUMBER` | não | ver `properties.js` | Build number do cliente web no fingerprint. |
 
 \* Podem ser definidos em runtime via comando, mas nada é enviado sem eles.
@@ -98,6 +99,9 @@ Alterações via comando são **em memória** — perdidas ao reiniciar.
 1. `config.set('enabled', false)` → listener em `index.js` chama `humanized.cancelAll()`.
 2. `responder.send()` checa `config.enabled` imediatamente antes de qualquer POST.
 
+### Sleep após responder
+`responder.send()` dispara o POST e, se `sleepAfterReply`, chama `config.set('enabled', false)` logo em seguida (cancela pendentes e bloqueia envios concorrentes). Envio falhou → religa. Comando `!autoPing sleep on|off`.
+
 ### Dedupe
 `processed: Set` no responder; entrada removida após 30s ou em falha de envio.
 
@@ -111,7 +115,7 @@ Alterações via comando são **em memória** — perdidas ao reiniciar.
 
 ### Comandos (`!autoPing ...`)
 Só da própria conta, em qualquer chat. Todos respondem **no chat e no terminal**. Mensagem do comando apagada após 2s.
-`status`, `canal <ID>`, `msg <texto>`, `delay <ms>`, `on`, `off`, `listar`, `ajuda`.
+`status`, `canal <ID>`, `msg <texto>`, `delay <ms>`, `on`, `off`, `sleep on|off`, `listar`, `ajuda`.
 
 ### Validação de canal
 `GET /channels/:id` (REST). OK + tipo em `THREAD_PARENT_TYPES` = válido. Não há checagem de permissão computada (falha de envio é logada). Erros: 10003/404, 50001/403.

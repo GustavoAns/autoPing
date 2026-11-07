@@ -4,7 +4,7 @@
  * apagada após 2s.
  */
 
-const { validateMessage, isSnowflake, THREAD_PARENT_TYPES, CHANNEL_TYPE_ICONS } = require('./config');
+const { validateMessage, isSnowflake, parseBool, THREAD_PARENT_TYPES, CHANNEL_TYPE_ICONS } = require('./config');
 
 const DELETE_COMMAND_AFTER_MS = 2000;
 
@@ -76,6 +76,7 @@ const HELP_TEXT = `
 \`!autoPing listar\` - Lista todos os canais disponíveis
 \`!autoPing on\` - Ativa o AutoPing
 \`!autoPing off\` - Desativa o AutoPing (cancela tópicos pendentes)
+\`!autoPing sleep on|off\` - Desliga sozinho após responder (volta com \`on\`)
 \`!autoPing ajuda\` - Mostra esta mensagem
 
 **Exemplos:**
@@ -105,6 +106,8 @@ ${ch.valid ? '✅ Canal válido' : '❌ ' + (ch.error || 'Canal não configurado
 ${config.autoMessage ? '✅ Mensagem válida' : '❌ Mensagem não configurada'}
 
 🕐 **Modo:** ${modeText(config)}
+
+💤 **Sleep após responder:** ${config.sleepAfterReply ? 'Ligado' : 'Desligado'}
 
 ⚡ **Status:** ${config.enabled ? '🟢 Ativo' : '🔴 Desativado'}
 
@@ -161,6 +164,20 @@ ${config.autoMessage ? '✅ Mensagem válida' : '❌ Mensagem não configurada'}
       console.log('   🔴 AutoPing DESATIVADO');
       await printStatus();
       return '🔴 AutoPing **desativado**';
+    },
+
+    async sleep(args) {
+      const arg = (args[0] || '').toLowerCase();
+      if (!['on', 'off'].includes(arg)) {
+        return `❌ Uso: \`!autoPing sleep on|off\`. Atual: ${config.sleepAfterReply ? 'on' : 'off'}`;
+      }
+      const value = parseBool(arg);
+      config.set('sleepAfterReply', value);
+      console.log(`   💤 Sleep após responder: ${value ? 'LIGADO' : 'DESLIGADO'}`);
+      await printStatus();
+      return value
+        ? '💤 Sleep **ligado**: após responder, o AutoPing desliga até `!autoPing on`'
+        : '💤 Sleep **desligado**';
     },
 
     async listar() {

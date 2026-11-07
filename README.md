@@ -147,6 +147,9 @@ WAIT_FOR_MESSAGE=5000
 
 # Delay humanizado após a 1ª mensagem do criador (em ms). Padrão: 900 | 0 = mais rápido
 HUMANIZED_DELAY=900
+
+# Desligar após responder (volta com !autoPing on). Padrão: false
+SLEEP_AFTER_REPLY=false
 ```
 
 ---
@@ -206,6 +209,7 @@ Digite estes comandos em **qualquer chat do Discord** (serão deletados automati
 | `!autoPing listar` | Lista todos os canais disponíveis |
 | `!autoPing on` | Ativa o AutoPing |
 | `!autoPing off` | Desativa o AutoPing (cancela tópicos aguardando resposta) |
+| `!autoPing sleep on` / `off` | Liga/desliga o sleep: após responder, desativa até `!autoPing on` |
 | `!autoPing ajuda` | Mostra todos os comandos |
 
 **Exemplos:**
